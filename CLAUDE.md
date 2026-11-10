@@ -40,7 +40,7 @@ Static web app hosted on GitHub Pages from `main`: https://misterweeman.github.i
 Same Firebase project as `one-piece-collection-tracker` (`one-piece-tracker-c7b87`), user's choice. The web config in `index.html` is public by design. Rules live only in the Firebase console: `match /users/{uid}/{document=**}` allows read/write to the signed-in owner. Ask the user before assuming they changed.
 
 - `users/<uid>/spese_mesi/<YYYY-MM>` = `{mov: {<id>: {d: 'YYYY-MM-DD', n: note, e: income, u: expense, c: category, k: account, x: 1 if deleted}}}`. Writes use `setDoc(..., {merge: true})` on a single movement; the app always writes every field (a missing field would keep the old value). Delete = tombstone `x: 1`. Imported ids `i00000`…, app ids `m<base36 time><rand>`.
-- `users/<uid>/spese_config/main` = `{budget: {category: annual euro}, colori: {category: '#rrggbb'}, categorie: [...], conti: [...]}`. An old `gruppi` field may still be stored: the app ignores it.
+- `users/<uid>/spese_config/main` = `{budget: {category: annual euro}, categorie: [...], conti: [...]}`. Old `gruppi` and `colori` fields may still be stored: the app ignores them.
 - Never change this stored format without discussing a migration first: it is the user's real ledger.
 - Offline: Firestore persistent cache; writes are not awaited on purpose (they settle only when the network is back).
 

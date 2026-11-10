@@ -33,16 +33,17 @@ test('calcola carries the unspent budget over to the next months', () => {
   assert.deepStrictEqual(feb.senza, [['Stipendio', 2000]]);
 });
 
-test('categorie merges configured, budgeted and used categories, with colour and live movement count', () => {
+test('categorie merges configured, budgeted and used categories, counting live movements overall and in the given year', () => {
   const mesi = {
+    '2025-12': {z: {d: '2025-12-01', u: 1, c: 'Bar'}},
     '2026-01': {a: {d: '2026-01-05', u: 10, c: 'Bar'}, b: {d: '2026-01-06', u: 5, c: 'Bar', x: 1}, t: {d: '2026-01-07', u: 50, c: ''}},
     '2026-02': {c: {d: '2026-02-01', u: 3, c: 'Bar'}}
   };
   const cfg = {categorie: ['Zoo'], budget: {Affitto: 1200, Vecchia: 0}, gruppi: {Affitto: 'Spese fisse'}, colori: {Bar: '#aa3300'}};
-  assert.deepStrictEqual(L.categorie(mesi, cfg), [
-    {c: 'Affitto', col: '', b: 1200, n: 0},
-    {c: 'Bar', col: '#aa3300', b: 0, n: 2},
-    {c: 'Zoo', col: '', b: 0, n: 0}
+  assert.deepStrictEqual(L.categorie(mesi, cfg, '2026'), [
+    {c: 'Affitto', n: 0, anno: 0},
+    {c: 'Bar', n: 3, anno: 2},
+    {c: 'Zoo', n: 0, anno: 0}
   ]);
 });
 

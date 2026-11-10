@@ -38,16 +38,21 @@
     return {righe: righe, senza: senza, ent: ent, usc: usc};
   }
 
-  // Every category: configured, with a budget, or used by a live movement. n = live movements using it.
-  function categorie(mesi, cfg) {
-    var n = {}, budget = cfg.budget || {}, colori = cfg.colori || {};
+  // Every category: configured, with a budget, or used by a live movement.
+  // n = live movements using it, anno = those in the given year ('YYYY').
+  function categorie(mesi, cfg, anno) {
+    var n = {}, na = {}, budget = cfg.budget || {};
     (cfg.categorie || []).forEach(function (c) { n[c] = 0; });
     Object.keys(budget).forEach(function (c) { if (budget[c] > 0) n[c] = 0; });
     Object.keys(mesi).forEach(function (ym) {
-      movs(mesi, ym).forEach(function (m) { if (m.c) n[m.c] = (n[m.c] || 0) + 1; });
+      movs(mesi, ym).forEach(function (m) {
+        if (!m.c) return;
+        n[m.c] = (n[m.c] || 0) + 1;
+        if (ym.slice(0, 4) === String(anno)) na[m.c] = (na[m.c] || 0) + 1;
+      });
     });
     return Object.keys(n).sort(function (a, b) { return a.localeCompare(b, 'it'); })
-      .map(function (c) { return {c: c, col: colori[c] || '', b: budget[c] || 0, n: n[c]}; });
+      .map(function (c) { return {c: c, n: n[c], anno: na[c] || 0}; });
   }
 
   // Per-month merge patch that moves the live movements of category da to a: {ym: {id: {c: a}}}

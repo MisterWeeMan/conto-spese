@@ -101,11 +101,9 @@ details summary{cursor:pointer;font-weight:500}
 .marca{display:flex;align-items:center;gap:10px}
 .pag{display:contents}
 .due{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
-@media (min-width:900px){.due{grid-template-columns:minmax(320px,400px) minmax(0,1fr);align-items:start}}
 .mov.cat{grid-template-columns:minmax(0,1fr) auto}
-.mov.cat .s{grid-column:1}
-.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#888888;margin-right:6px}
-input[type=color]{padding:3px;height:42px;cursor:pointer}
+.filtri{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+.filtri select{width:auto}
 #menu{margin:0;padding:0;border:0;border-right:1px solid var(--line);height:100%;max-height:100%;width:min(280px,85vw);max-width:none;background:var(--surface);color:var(--ink)}
 #menu[open]{animation:entra .18s ease-out}
 @keyframes entra{from{transform:translateX(-100%)}}
@@ -148,8 +146,7 @@ input[type=color]{padding:3px;height:42px;cursor:pointer}
     <section class="box">
       <h2 id="catTitolo">Nuova categoria</h2>
       <form id="catForm" autocomplete="off">
-        <label>Nome<input id="catNome" required maxlength="60"></label>
-        <label>Colore<input id="catColore" type="color"></label>
+        <label class="tutta">Nome<input id="catNome" required maxlength="60"></label>
         <label class="tutta" id="catDestBox" hidden>Se la elimini, sposta i movimenti in<select id="catDest"></select></label>
         <p class="stato tutta" id="catNota" hidden></p>
         <div class="azioni tutta">
@@ -161,6 +158,10 @@ input[type=color]{padding:3px;height:42px;cursor:pointer}
     </section>
     <section class="box">
       <div class="testa"><h2>Categorie</h2><span class="stato" id="catConta"></span></div>
+      <div class="filtri">
+        <input id="catCerca" type="search" placeholder="Cerca per nome" aria-label="Cerca nelle categorie">
+        <select id="catOrd" aria-label="Ordina le categorie"><option value="nome">Per nome</option><option value="mov">Per movimenti</option></select>
+      </div>
       <div class="lista" id="catLista"><p class="vuoto">Qui compaiono le categorie. Tocca una riga per modificarla.</p></div>
     </section>
   </div>
@@ -238,12 +239,10 @@ const calcola = ym => window.CSLogic.calcola(st.mesi, st.cfg, ym);
 
 const st = {mesi: {}, cfg: {budget: {}, categorie: [], conti: []}, ym: todayISO().slice(0, 7), edit: null, catEdit: null, catInfo: [], q: '', pronto: false};
 const nMov = n => `${n} moviment${n === 1 ? 'o' : 'i'}`;
-// the colour is checked before it goes into a style attribute: the config can also come from an imported file
-const dot = c => { const col = st.cfg.colori?.[c]; return `<i class="dot"${/^#[0-9a-f]{6}$/i.test(col) ? ` style="background:${col}"` : ''}></i>`; };
 function rigaBudget(r) {
   const cls = r.residuo < -0.005 ? 'over' : (r.disp > 0 && r.speso / r.disp > 0.85 ? 'warn' : 'ok');
   const pct = r.disp > 0 ? Math.min(100, Math.max(0, r.speso / r.disp * 100)) : (r.speso > 0 || r.residuo < 0 ? 100 : 0);
-  return `<div class="riga ${cls}"><span class="nome">${r.tot ? '' : dot(r.c)}${esc(r.c)}${cls === 'over' ? '<span class="pill">sforato</span>' : ''}</span><span class="res">${eur.format(r.residuo)}</span>
+  return `<div class="riga ${cls}"><span class="nome">${esc(r.c)}${cls === 'over' ? '<span class="pill">sforato</span>' : ''}</span><span class="res">${eur.format(r.residuo)}</span>
     <div class="barra"><i style="width:${pct.toFixed(1)}%"></i></div>
     <span class="det num">speso ${eur.format(r.speso)} di ${eur.format(r.disp)} disponibili</span></div>`;
 }
@@ -263,8 +262,8 @@ function render() {
   if (st.pronto) {
     let h = '';
     if (righe.length) h += `<div class="gruppo">${righe.sort((a, b) => a.c.localeCompare(b.c, 'it')).map(rigaBudget).join('')}</div>
-      <div class="gruppo totale">${rigaBudget({c: 'Totale', tot: 1, ...tot})}</div>`;
-    if (senza.length) h += `<div class="gruppo"><h3>Senza budget, movimenti del mese</h3>${senza.map(([c, v]) => `<div class="riga"><span class="nome">${dot(c)}${esc(c)}</span><span class="res">${eur.format(v)}</span></div>`).join('')}</div>`;
+      <div class="gruppo totale">${rigaBudget({c: 'Totale', ...tot})}</div>`;
+    if (senza.length) h += `<div class="gruppo"><h3>Senza budget, movimenti del mese</h3>${senza.map(([c, v]) => `<div class="riga"><span class="nome">${esc(c)}</span><span class="res">${eur.format(v)}</span></div>`).join('')}</div>`;
     $('budget').innerHTML = h || '<p class="vuoto">Nessun budget impostato. Aprine uno da "Modifica i budget annuali".</p>';
     $('budget').className = 'gruppo';
 
@@ -275,18 +274,21 @@ function render() {
     $('lista').innerHTML = vis.length ? vis.map(m => `<button type="button" class="mov${st.edit?.id === m.id ? ' sel' : ''}" data-id="${esc(m.id)}">
       <span class="g">${m.d.slice(8)}/${m.d.slice(5, 7)}</span><span class="n">${esc(m.n || m.c || 'Senza nota')}</span>
       <span class="a${net(m) > 0 ? ' pos' : ''}">${eur.format(net(m))}</span>
-      <span class="s">${m.c ? dot(m.c) : ''}${esc(m.c || 'Giroconto')}${m.k ? ' · ' + esc(m.k) : ''}</span></button>`).join('')
+      <span class="s">${esc(m.c || 'Giroconto')}${m.k ? ' · ' + esc(m.k) : ''}</span></button>`).join('')
       : `<p class="vuoto">${q ? 'Nessun movimento corrisponde alla ricerca.' : `Nessun movimento a ${esc(nome)}. Aggiungi il primo dal modulo.`}</p>`;
   }
 
-  st.catInfo = window.CSLogic.categorie(st.mesi, st.cfg);
+  const anno = todayISO().slice(0, 4);
+  st.catInfo = window.CSLogic.categorie(st.mesi, st.cfg, anno); // sorted by name
   st.cats = st.catInfo.map(r => r.c);
   if (st.pronto) {
-    $('catConta').textContent = st.catInfo.length;
-    $('catLista').innerHTML = st.catInfo.length ? st.catInfo.map(r => `<button type="button" class="mov cat${st.catEdit === r.c ? ' sel' : ''}" data-cat="${esc(r.c)}">
-      <span class="n">${dot(r.c)}${esc(r.c)}</span><span class="a">${r.b ? eur.format(r.b) + '/anno' : ''}</span>
-      <span class="s">${nMov(r.n)}</span></button>`).join('')
-      : '<p class="vuoto">Nessuna categoria. Aggiungi la prima dal modulo.</p>';
+    const cq = $('catCerca').value.trim().toLowerCase();
+    const cv = st.catInfo.filter(r => r.c.toLowerCase().includes(cq));
+    if ($('catOrd').value === 'mov') cv.sort((a, b) => b.anno - a.anno); // stable: ties stay by name
+    $('catConta').textContent = `${cq ? `${cv.length} di ${st.catInfo.length}` : st.catInfo.length} categorie · movimenti nel ${anno}`;
+    $('catLista').innerHTML = cv.length ? cv.map(r => `<button type="button" class="mov cat${st.catEdit === r.c ? ' sel' : ''}" data-cat="${esc(r.c)}">
+      <span class="n">${esc(r.c)}</span><span class="a">${r.anno}</span></button>`).join('')
+      : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
   $('catList').innerHTML = st.cats.map(c => `<option value="${esc(c)}">`).join('');
   const conto = $('conto').value || ricorda('conto');
@@ -398,11 +400,10 @@ function setCatEdit(c) {
   const altre = (st.cats || []).filter(c => c !== r?.c);
   $('catElimina').disabled = !!r?.n && !altre.length;
   $('catNota').hidden = $('catDestBox').hidden = !r?.n;
-  if (r?.n) $('catNota').textContent = `Usata in ${nMov(r.n)}: se la rinomini i movimenti la seguono.${altre.length ? '' : ' Per eliminarla crea prima un\'altra categoria.'}`;
+  if (r?.n) $('catNota').textContent = `Usata in ${nMov(r.n)} in tutti gli anni: se la rinomini i movimenti la seguono.${altre.length ? '' : ' Per eliminarla crea prima un\'altra categoria.'}`;
   // no default destination: the user must pick it, a merge of two categories cannot be undone
   $('catDest').innerHTML = '<option value="">Scegli…</option>' + altre.map(c => `<option>${esc(c)}</option>`).join('');
   $('catNome').value = r ? r.c : '';
-  $('catColore').value = r?.col || '#888888';
 }
 $('catForm').addEventListener('submit', ev => {
   ev.preventDefault();
@@ -410,12 +411,11 @@ $('catForm').addEventListener('submit', ev => {
   if (!nome) { $('catNome').focus(); return; }
   if (!st.uid || !st.pronto) { toast('Il database non è ancora pronto'); return; }
   if (st.cats.some(c => c !== da && c.toLowerCase() === nome.toLowerCase())) { toast('Esiste già una categoria con questo nome'); return; }
-  const cfg = {categorie: [...(st.cfg.categorie || []).filter(c => c !== da && c !== nome), nome], colori: {[nome]: $('catColore').value}};
+  const cfg = {categorie: [...(st.cfg.categorie || []).filter(c => c !== da && c !== nome), nome]};
   // one batch: a rename must not stay half done between the movements and the config
   const batch = writeBatch(db);
   let n = 0;
   if (da && da !== nome) {
-    cfg.colori[da] = deleteField();
     cfg.budget = {[da]: deleteField()};
     if (st.cfg.budget?.[da]) cfg.budget[nome] = st.cfg.budget[da];
     for (const [ym, mov] of Object.entries(rinomina(st.mesi, da, nome))) { batch.set(refMese(ym), {mov}, {merge: true}); n += Object.keys(mov).length; }
@@ -434,11 +434,13 @@ $('catElimina').addEventListener('click', () => {
   const batch = writeBatch(db);
   let n = 0;
   for (const [ym, mov] of patch) { batch.set(refMese(ym), {mov}, {merge: true}); n += Object.keys(mov).length; }
-  batch.set(refCfg(), {categorie: (st.cfg.categorie || []).filter(x => x !== c), colori: {[c]: deleteField()}, budget: {[c]: deleteField()}}, {merge: true});
+  batch.set(refCfg(), {categorie: (st.cfg.categorie || []).filter(x => x !== c), budget: {[c]: deleteField()}}, {merge: true});
   batch.commit().catch(errore); // not awaited, same reason as scrivi
   toast(n ? `Categoria eliminata, ${nMov(n)} spostat${n === 1 ? 'o' : 'i'} in ${a}` : 'Categoria eliminata'); setCatEdit(null); render();
 });
 $('catAnnulla').addEventListener('click', () => { setCatEdit(null); render(); });
+$('catCerca').addEventListener('input', render);
+$('catOrd').addEventListener('change', render);
 $('catLista').addEventListener('click', ev => {
   const b = ev.target.closest('.mov'); if (!b) return;
   setCatEdit(b.dataset.cat); render(); $('pagCategorie').scrollIntoView({behavior: 'smooth', block: 'start'});
