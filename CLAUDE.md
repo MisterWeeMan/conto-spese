@@ -10,6 +10,22 @@ Personal expense ledger of the user (single user). Born from the Google Sheet "B
 - Never commit or push unless asked. **A push to `main` deploys the site.**
 - Never print or commit the user's ledger data. `dati/` (git-ignored) holds the 2026 import file; the repo is public.
 
+## Workflow (every change; user's decision, 2026-11-10)
+
+1. **Discuss first.** Say in two or three lines what would change, whether it is in or out of scope of the request, and whether it touches the stored data format. Edit only after the user's go-ahead.
+2. **Logic is test-first.** Amounts, the budget rule and parsing: invoke the `mattpocock-skills:tdd` skill, write one failing test in `tests/`, see it fail, then the least code in `logic.js`. A logic bug starts with a test that reproduces it. No automated tests for UI. If the skill suggests something against this file (new dependency, real data in tests, browser automation), this file wins.
+3. **Verify.** `node --test`, then the preview at phone and desktop width. List in chat what the user must try by hand (Google login, sync); no separate document.
+4. **Review before any commit.**
+   - `/code-review` on every diff; never `--fix` or `--comment` without asking.
+   - `/security-review` only when login, Firestore writes or the import are touched.
+   - Check the diff for real ledger data and for files under `dati/`: the repo is public.
+   Fix real findings before proposing the commit.
+5. **Commit and push only when asked.** Before a push, say that it deploys the site.
+
+Before a migration of the stored format, back up the Firestore data first. How to do the backup is not decided yet: discuss it with the user when the first migration comes up.
+
+Deliberately not used here: branches and PRs, manual-check documents, browser automation (Playwright), CI test runs (they would not block the Pages deploy).
+
 ## What it is
 
 Static web app hosted on GitHub Pages from `main`: https://misterweeman.github.io/conto-spese/
@@ -24,7 +40,7 @@ Static web app hosted on GitHub Pages from `main`: https://misterweeman.github.i
 Same Firebase project as `one-piece-collection-tracker` (`one-piece-tracker-c7b87`), user's choice. The web config in `index.html` is public by design. Rules live only in the Firebase console: `match /users/{uid}/{document=**}` allows read/write to the signed-in owner. Ask the user before assuming they changed.
 
 - `users/<uid>/spese_mesi/<YYYY-MM>` = `{mov: {<id>: {d: 'YYYY-MM-DD', n: note, e: income, u: expense, c: category, k: account, x: 1 if deleted}}}`. Writes use `setDoc(..., {merge: true})` on a single movement; the app always writes every field (a missing field would keep the old value). Delete = tombstone `x: 1`. Imported ids `i00000`…, app ids `m<base36 time><rand>`.
-- `users/<uid>/spese_config/main` = `{budget: {category: annual euro}, gruppi: {category: group}, categorie: [...], conti: [...]}`.
+- `users/<uid>/spese_config/main` = `{budget: {category: annual euro}, colori: {category: '#rrggbb'}, categorie: [...], conti: [...]}`. An old `gruppi` field may still be stored: the app ignores it.
 - Never change this stored format without discussing a migration first: it is the user's real ledger.
 - Offline: Firestore persistent cache; writes are not awaited on purpose (they settle only when the network is back).
 

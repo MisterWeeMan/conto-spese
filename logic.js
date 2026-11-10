@@ -28,10 +28,10 @@
       ytd[m.c] = (ytd[m.c] || 0) + net(m);
       if (i === M) { mese[m.c] = (mese[m.c] || 0) + net(m); ent += m.e || 0; usc += m.u || 0; }
     });
-    var budget = cfg.budget || {}, gruppi = cfg.gruppi || {};
+    var budget = cfg.budget || {};
     var righe = Object.entries(budget).filter(function (p) { return p[1] > 0; }).map(function (p) {
       var c = p[0], speso = -(mese[c] || 0), residuo = p[1] / 12 * M + (ytd[c] || 0);
-      return {c: c, g: gruppi[c] || 'Altro', speso: speso, disp: residuo + speso, residuo: residuo};
+      return {c: c, speso: speso, disp: residuo + speso, residuo: residuo};
     });
     var senza = Object.entries(mese).filter(function (p) { return !(budget[p[0]] > 0); })
       .sort(function (a, b) { return a[1] - b[1]; });
@@ -40,14 +40,14 @@
 
   // Every category: configured, with a budget, or used by a live movement. n = live movements using it.
   function categorie(mesi, cfg) {
-    var n = {}, budget = cfg.budget || {}, gruppi = cfg.gruppi || {};
+    var n = {}, budget = cfg.budget || {}, colori = cfg.colori || {};
     (cfg.categorie || []).forEach(function (c) { n[c] = 0; });
     Object.keys(budget).forEach(function (c) { if (budget[c] > 0) n[c] = 0; });
     Object.keys(mesi).forEach(function (ym) {
       movs(mesi, ym).forEach(function (m) { if (m.c) n[m.c] = (n[m.c] || 0) + 1; });
     });
     return Object.keys(n).sort(function (a, b) { return a.localeCompare(b, 'it'); })
-      .map(function (c) { return {c: c, g: gruppi[c] || 'Altro', b: budget[c] || 0, n: n[c]}; });
+      .map(function (c) { return {c: c, col: colori[c] || '', b: budget[c] || 0, n: n[c]}; });
   }
 
   // Per-month merge patch that moves the live movements of category da to a: {ym: {id: {c: a}}}

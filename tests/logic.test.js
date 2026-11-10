@@ -27,22 +27,22 @@ test('calcola carries the unspent budget over to the next months', () => {
   const feb = L.calcola(mesi, cfg, '2026-02');
   assert.ok(Math.abs(feb.righe[0].residuo - (80 - 72.69)) < 0.005); // 2 months of budget minus spent since January
   assert.ok(Math.abs(feb.righe[0].disp - (80 - 62.69)) < 0.005);    // available this month
-  assert.strictEqual(feb.righe[0].g, 'Spese fisse');
+  assert.ok(!('g' in feb.righe[0])); // groups are gone: the old stored gruppi field is ignored
   assert.strictEqual(feb.usc, 10);   // the transfer without category is left out
   assert.strictEqual(feb.ent, 2000);
   assert.deepStrictEqual(feb.senza, [['Stipendio', 2000]]);
 });
 
-test('categorie merges configured, budgeted and used categories and counts live movements', () => {
+test('categorie merges configured, budgeted and used categories, with colour and live movement count', () => {
   const mesi = {
     '2026-01': {a: {d: '2026-01-05', u: 10, c: 'Bar'}, b: {d: '2026-01-06', u: 5, c: 'Bar', x: 1}, t: {d: '2026-01-07', u: 50, c: ''}},
     '2026-02': {c: {d: '2026-02-01', u: 3, c: 'Bar'}}
   };
-  const cfg = {categorie: ['Zoo'], budget: {Affitto: 1200, Vecchia: 0}, gruppi: {Affitto: 'Spese fisse'}};
+  const cfg = {categorie: ['Zoo'], budget: {Affitto: 1200, Vecchia: 0}, gruppi: {Affitto: 'Spese fisse'}, colori: {Bar: '#aa3300'}};
   assert.deepStrictEqual(L.categorie(mesi, cfg), [
-    {c: 'Affitto', g: 'Spese fisse', b: 1200, n: 0},
-    {c: 'Bar', g: 'Altro', b: 0, n: 2},
-    {c: 'Zoo', g: 'Altro', b: 0, n: 0}
+    {c: 'Affitto', col: '', b: 1200, n: 0},
+    {c: 'Bar', col: '#aa3300', b: 0, n: 2},
+    {c: 'Zoo', col: '', b: 0, n: 0}
   ]);
 });
 
