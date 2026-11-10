@@ -38,7 +38,30 @@
     return {righe: righe, senza: senza, ent: ent, usc: usc};
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, calcola: calcola};
+  // Every category: configured, with a budget, or used by a live movement. n = live movements using it.
+  function categorie(mesi, cfg) {
+    var n = {}, budget = cfg.budget || {}, gruppi = cfg.gruppi || {};
+    (cfg.categorie || []).forEach(function (c) { n[c] = 0; });
+    Object.keys(budget).forEach(function (c) { if (budget[c] > 0) n[c] = 0; });
+    Object.keys(mesi).forEach(function (ym) {
+      movs(mesi, ym).forEach(function (m) { if (m.c) n[m.c] = (n[m.c] || 0) + 1; });
+    });
+    return Object.keys(n).sort(function (a, b) { return a.localeCompare(b, 'it'); })
+      .map(function (c) { return {c: c, g: gruppi[c] || 'Altro', b: budget[c] || 0, n: n[c]}; });
+  }
+
+  // Per-month merge patch that moves the live movements of category da to a: {ym: {id: {c: a}}}
+  function rinomina(mesi, da, a) {
+    var out = {};
+    Object.keys(mesi).forEach(function (ym) {
+      movs(mesi, ym).forEach(function (m) {
+        if (m.c === da) (out[ym] = out[ym] || {})[m.id] = {c: a};
+      });
+    });
+    return out;
+  }
+
+  var api = {parseAmount: parseAmount, movs: movs, net: net, calcola: calcola, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

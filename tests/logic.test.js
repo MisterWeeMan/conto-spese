@@ -33,6 +33,27 @@ test('calcola carries the unspent budget over to the next months', () => {
   assert.deepStrictEqual(feb.senza, [['Stipendio', 2000]]);
 });
 
+test('categorie merges configured, budgeted and used categories and counts live movements', () => {
+  const mesi = {
+    '2026-01': {a: {d: '2026-01-05', u: 10, c: 'Bar'}, b: {d: '2026-01-06', u: 5, c: 'Bar', x: 1}, t: {d: '2026-01-07', u: 50, c: ''}},
+    '2026-02': {c: {d: '2026-02-01', u: 3, c: 'Bar'}}
+  };
+  const cfg = {categorie: ['Zoo'], budget: {Affitto: 1200, Vecchia: 0}, gruppi: {Affitto: 'Spese fisse'}};
+  assert.deepStrictEqual(L.categorie(mesi, cfg), [
+    {c: 'Affitto', g: 'Spese fisse', b: 1200, n: 0},
+    {c: 'Bar', g: 'Altro', b: 0, n: 2},
+    {c: 'Zoo', g: 'Altro', b: 0, n: 0}
+  ]);
+});
+
+test('rinomina patches only the live movements of that category', () => {
+  const mesi = {
+    '2026-01': {a: {d: '2026-01-05', u: 10, c: 'Bar'}, b: {d: '2026-01-06', u: 5, c: 'Bar', x: 1}, o: {d: '2026-01-07', u: 1, c: 'Cibo'}},
+    '2026-02': {c: {d: '2026-02-01', u: 3, c: 'Cibo'}}
+  };
+  assert.deepStrictEqual(L.rinomina(mesi, 'Bar', 'Caffè'), {'2026-01': {a: {c: 'Caffè'}}});
+});
+
 test('calcola does not carry over across years', () => {
   const mesi = {'2025-12': {a: {d: '2025-12-05', u: 999, c: 'Bar'}}};
   assert.strictEqual(L.calcola(mesi, {budget: {Bar: 120}}, '2026-01').righe[0].residuo, 10);

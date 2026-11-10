@@ -98,6 +98,21 @@ details summary{cursor:pointer;font-weight:500}
 .imp{display:grid;grid-template-columns:minmax(0,1fr) 7.5em;gap:6px 10px;align-items:center;margin-top:10px}
 .imp input{padding:6px 8px;font-family:var(--mono);text-align:right}
 .imp small{grid-column:1/-1;color:var(--muted)}
+.marca{display:flex;align-items:center;gap:10px}
+.pag{display:contents}
+.due{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:900px){.due{grid-template-columns:minmax(320px,400px) minmax(0,1fr);align-items:start}}
+.mov.cat{grid-template-columns:minmax(0,1fr) auto}
+.mov.cat .s{grid-column:1}
+#menu{margin:0;padding:0;border:0;border-right:1px solid var(--line);height:100%;max-height:100%;width:min(280px,85vw);max-width:none;background:var(--surface);color:var(--ink)}
+#menu[open]{animation:entra .18s ease-out}
+@keyframes entra{from{transform:translateX(-100%)}}
+@media (prefers-reduced-motion:reduce){#menu[open]{animation:none}}
+#menu::backdrop{background:rgba(0,0,0,.4)}
+#menu nav{display:flex;flex-direction:column;gap:4px;padding:16px;padding-top:max(16px,env(safe-area-inset-top,0px));padding-left:max(16px,env(safe-area-inset-left,0px))}
+#menu a{padding:12px;border-radius:8px;color:inherit;text-decoration:none;font-weight:500}
+#menu a:hover{background:var(--bg)}
+#menu a[aria-current]{background:var(--track);font-weight:600}
 #toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-weight:500;max-width:calc(100% - 32px)}
 </style>
 </head>
@@ -109,10 +124,17 @@ details summary{cursor:pointer;font-weight:500}
 </div>
 
 <div class="wrap" id="app" hidden>
+  <dialog id="menu" aria-label="Menu">
+    <nav>
+      <button class="ico" id="menuChiudi" type="button" aria-label="Chiudi menu">×</button>
+      <a href="#">Registro</a>
+      <a href="#categorie">Categorie</a>
+    </nav>
+  </dialog>
   <div class="top">
-    <h1>Conto Spese</h1>
+    <div class="marca"><button class="ico" id="menuApri" type="button" aria-label="Apri menu" aria-haspopup="dialog">☰</button><h1>Conto Spese</h1></div>
     <div class="utente"><span id="email"></span><button class="btn" id="logout">Esci</button></div>
-    <div class="mese">
+    <div class="mese" id="mese">
       <button class="ico" id="prec" aria-label="Mese precedente">‹</button>
       <strong id="meseNome"></strong>
       <button class="ico" id="succ" aria-label="Mese successivo">›</button>
@@ -120,6 +142,27 @@ details summary{cursor:pointer;font-weight:500}
   </div>
   <p class="stato" id="stato">Carico i movimenti…</p>
 
+  <div class="due" id="pagCategorie" hidden>
+    <section class="box">
+      <h2 id="catTitolo">Nuova categoria</h2>
+      <form id="catForm" autocomplete="off">
+        <label>Nome<input id="catNome" required maxlength="60"></label>
+        <label>Gruppo<select id="catGruppo"></select></label>
+        <p class="stato tutta" id="catNota" hidden></p>
+        <div class="azioni tutta">
+          <button class="btn pri" id="catSalva" type="submit">Aggiungi</button>
+          <button class="btn peric" id="catElimina" type="button" hidden>Elimina</button>
+          <button class="btn" id="catAnnulla" type="button" hidden>Annulla</button>
+        </div>
+      </form>
+    </section>
+    <section class="box">
+      <div class="testa"><h2>Categorie</h2><span class="stato" id="catConta"></span></div>
+      <div class="lista" id="catLista"><p class="vuoto">Qui compaiono le categorie. Tocca una riga per modificarla.</p></div>
+    </section>
+  </div>
+
+  <div class="pag" id="pagRegistro">
   <div class="sintesi">
     <div><span>Residuo budget</span><b id="sRes">–</b></div>
     <div><span>Uscite del mese</span><b id="sUsc">–</b></div>
@@ -169,6 +212,7 @@ details summary{cursor:pointer;font-weight:500}
       <div class="lista" id="lista"><p class="vuoto">Qui compaiono i movimenti del mese. Tocca una riga per modificarla.</p></div>
     </section>
   </div>
+  </div>
 </div>
 <div id="toast" role="status" hidden></div>
 
@@ -177,7 +221,7 @@ details summary{cursor:pointer;font-weight:500}
 // shortcut: Firebase comes from the CDN, so a first visit without network shows only "Carico…"; self-host the SDK if that matters.
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, setDoc, onSnapshot, writeBatch, deleteField } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 
 const $ = id => document.getElementById(id);
 const eur = new Intl.NumberFormat('it-IT', {style: 'currency', currency: 'EUR'});
@@ -186,11 +230,12 @@ const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const GRUPPI = ['Spese fisse', 'Spese variabili costanti', 'Spese variabili', 'Spese annuali', 'Spese estemporanee', 'Altro'];
 
-const {parseAmount, net} = window.CSLogic;
+const {parseAmount, net, rinomina} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 const calcola = ym => window.CSLogic.calcola(st.mesi, st.cfg, ym);
 
-const st = {mesi: {}, cfg: {budget: {}, gruppi: {}, categorie: [], conti: []}, ym: todayISO().slice(0, 7), edit: null, q: '', pronto: false};
+const st = {mesi: {}, cfg: {budget: {}, gruppi: {}, categorie: [], conti: []}, ym: todayISO().slice(0, 7), edit: null, catEdit: null, catInfo: [], q: '', pronto: false};
+const nMov = n => `${n} moviment${n === 1 ? 'o' : 'i'}`;
 function rigaBudget(r) {
   const cls = r.residuo < -0.005 ? 'over' : (r.disp > 0 && r.speso / r.disp > 0.85 ? 'warn' : 'ok');
   const pct = r.disp > 0 ? Math.min(100, Math.max(0, r.speso / r.disp * 100)) : (r.speso > 0 || r.residuo < 0 ? 100 : 0);
@@ -233,9 +278,15 @@ function render() {
       : `<p class="vuoto">${q ? 'Nessun movimento corrisponde alla ricerca.' : `Nessun movimento a ${esc(nome)}. Aggiungi il primo dal modulo.`}</p>`;
   }
 
-  const cats = new Set(st.cfg.categorie || []);
-  for (const ym in st.mesi) for (const m of movs(ym)) if (m.c) cats.add(m.c);
-  st.cats = [...cats].sort((a, b) => a.localeCompare(b, 'it'));
+  st.catInfo = window.CSLogic.categorie(st.mesi, st.cfg);
+  st.cats = st.catInfo.map(r => r.c);
+  if (st.pronto) {
+    $('catConta').textContent = st.catInfo.length;
+    $('catLista').innerHTML = st.catInfo.length ? st.catInfo.map(r => `<button type="button" class="mov cat${st.catEdit === r.c ? ' sel' : ''}" data-cat="${esc(r.c)}">
+      <span class="n">${esc(r.c)}</span><span class="a">${r.b ? eur.format(r.b) + '/anno' : ''}</span>
+      <span class="s">${esc(r.g)} · ${nMov(r.n)}</span></button>`).join('')
+      : '<p class="vuoto">Nessuna categoria. Aggiungi la prima dal modulo.</p>';
+  }
   $('catList').innerHTML = st.cats.map(c => `<option value="${esc(c)}">`).join('');
   const conto = $('conto').value || ricorda('conto');
   $('conto').innerHTML = '<option value="">Nessuno</option>' + (st.cfg.conti || []).map(k => `<option>${esc(k)}</option>`).join('');
@@ -334,7 +385,66 @@ $('importa').addEventListener('change', async ev => {
   ev.target.value = '';
 });
 
-setEdit(null); render();
+// Categories page
+$('catGruppo').innerHTML = GRUPPI.map(g => `<option>${esc(g)}</option>`).join('');
+function setCatEdit(c) {
+  const r = (c && st.catInfo.find(x => x.c === c)) || null;
+  st.catEdit = r ? r.c : null;
+  $('catTitolo').textContent = r ? 'Modifica categoria' : 'Nuova categoria';
+  $('catSalva').textContent = r ? 'Salva modifiche' : 'Aggiungi';
+  $('catElimina').hidden = $('catAnnulla').hidden = !r;
+  $('catElimina').textContent = 'Elimina'; delete $('catElimina').dataset.ok;
+  // a category still used by movements cannot be deleted: its movements would silently become transfers
+  $('catElimina').disabled = !!r?.n;
+  $('catNota').hidden = !r?.n;
+  if (r?.n) $('catNota').textContent = `Usata in ${nMov(r.n)}: se la rinomini i movimenti la seguono. Per eliminarla sposta prima i movimenti su un'altra categoria.`;
+  $('catNome').value = r ? r.c : '';
+  $('catGruppo').value = r && GRUPPI.includes(r.g) ? r.g : 'Altro';
+}
+$('catForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const nome = $('catNome').value.trim(), da = st.catEdit;
+  if (!nome) { $('catNome').focus(); return; }
+  if (!st.uid || !st.pronto) { toast('Il database non è ancora pronto'); return; }
+  if (st.cats.some(c => c !== da && c.toLowerCase() === nome.toLowerCase())) { toast('Esiste già una categoria con questo nome'); return; }
+  const cfg = {categorie: [...(st.cfg.categorie || []).filter(c => c !== da && c !== nome), nome], gruppi: {[nome]: $('catGruppo').value}};
+  // one batch: a rename must not stay half done between the movements and the config
+  const batch = writeBatch(db);
+  let n = 0;
+  if (da && da !== nome) {
+    cfg.gruppi[da] = deleteField();
+    cfg.budget = {[da]: deleteField()};
+    if (st.cfg.budget?.[da]) cfg.budget[nome] = st.cfg.budget[da];
+    for (const [ym, mov] of Object.entries(rinomina(st.mesi, da, nome))) { batch.set(refMese(ym), {mov}, {merge: true}); n += Object.keys(mov).length; }
+  }
+  batch.set(refCfg(), cfg, {merge: true});
+  batch.commit().catch(errore); // not awaited, same reason as scrivi
+  toast(!da ? `Categoria aggiunta: ${nome}` : n ? `Categoria salvata, ${nMov(n)} aggiornat${n === 1 ? 'o' : 'i'}` : 'Categoria salvata');
+  setCatEdit(null); render();
+});
+$('catElimina').addEventListener('click', () => {
+  const b = $('catElimina'), c = st.catEdit;
+  if (!b.dataset.ok) { b.dataset.ok = 1; b.textContent = 'Conferma eliminazione'; return; }
+  setDoc(refCfg(), {categorie: (st.cfg.categorie || []).filter(x => x !== c), gruppi: {[c]: deleteField()}, budget: {[c]: deleteField()}}, {merge: true}).catch(errore);
+  toast('Categoria eliminata'); setCatEdit(null); render();
+});
+$('catAnnulla').addEventListener('click', () => { setCatEdit(null); render(); });
+$('catLista').addEventListener('click', ev => {
+  const b = ev.target.closest('.mov'); if (!b) return;
+  setCatEdit(b.dataset.cat); render(); $('pagCategorie').scrollIntoView({behavior: 'smooth', block: 'start'});
+});
+
+// Side menu: the page is the URL hash, so the phone back button works
+$('menuApri').addEventListener('click', () => $('menu').showModal());
+$('menu').addEventListener('click', ev => { if (ev.target === $('menu') || ev.target.closest('a,#menuChiudi')) $('menu').close(); });
+function pagina() {
+  const cat = location.hash === '#categorie';
+  $('pagCategorie').hidden = !cat; $('pagRegistro').hidden = $('mese').hidden = cat;
+  for (const a of $('menu').querySelectorAll('a')) (a.hash === '#categorie') === cat ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
+}
+addEventListener('hashchange', pagina); pagina();
+
+setEdit(null); setCatEdit(null); render();
 
 // The Firebase config is not a secret: the Firestore rules let everyone read and write only users/<own uid>/...
 // Same Firebase project as one-piece-collection-tracker; this app keeps its data in its own collections.
