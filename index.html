@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Conto Spese</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* layout: registro a sinistra (inserimento + movimenti), budget del mese a destra; su telefono una colonna: inserimento, budget, movimenti */
+:root{
+  --bg:#f2f5f4;--surface:#ffffff;--ink:#15211f;--muted:#5a6966;--line:#d5dedb;--track:#e2e9e6;
+  --accent:#0f6e64;--accent-ink:#ffffff;--ok:#1b7548;--warn:#9a5b00;--over:#b3261e;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1514;--surface:#172120;--ink:#e5eeeb;--muted:#93a4a0;--line:#2a3836;--track:#243230;
+  --accent:#4cc2b3;--accent-ink:#06211e;--ok:#5cc98f;--warn:#e6a94a;--over:#ff8f85;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1514;--surface:#172120;--ink:#e5eeeb;--muted:#93a4a0;--line:#2a3836;--track:#243230;
+  --accent:#4cc2b3;--accent-ink:#06211e;--ok:#5cc98f;--warn:#e6a94a;--over:#ff8f85;color-scheme:dark}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+.gate{max-width:360px;margin:18vh auto 0;text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center}
+.utente{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);min-width:0}
+.utente span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.utente .btn{padding:6px 10px}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 var(--sans);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 48px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+h1{font-size:20px;font-weight:600;margin:0}
+h2{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+.mese{display:flex;align-items:center;gap:6px}
+.mese strong{min-width:9.5em;text-align:center;font-weight:600;text-transform:capitalize}
+.ico{width:36px;height:36px;border:1px solid var(--line);background:var(--surface);border-radius:8px;cursor:pointer;font-size:18px;line-height:1}
+.stato{color:var(--muted);font-size:13px;margin:0}
+.stato.err{color:var(--over)}
+
+.sintesi{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.sintesi div{background:var(--surface);padding:10px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.sintesi span{font-size:12px;color:var(--muted)}
+.sintesi b{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:18px;font-weight:600}
+
+.griglia{display:grid;gap:16px;grid-template-columns:minmax(0,1fr);grid-template-areas:"form" "budget" "mov"}
+@media (min-width:900px){.griglia{grid-template-columns:minmax(320px,400px) minmax(0,1fr);grid-template-areas:"form budget" "mov budget";align-items:start}}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}
+#boxForm{grid-area:form}#boxBudget{grid-area:budget}#boxMov{grid-area:mov}
+.testa{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+
+form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+form .tutta{grid-column:1/-1}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+input,select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:16px;width:100%;min-width:0}
+#importo{font-family:var(--mono);font-size:22px;font-weight:600}
+.tipo{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.tipo label{flex-direction:row;justify-content:center;padding:9px;font-size:14px;cursor:pointer;color:var(--ink)}
+.tipo input{position:absolute;opacity:0;width:1px;height:1px}
+.tipo label:has(input:checked){background:var(--accent);color:var(--accent-ink);font-weight:600}
+.tipo label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:-4px}
+.azioni{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:10px 14px;cursor:pointer;font-weight:500}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600;flex:1}
+.btn.peric{color:var(--over);border-color:var(--over)}
+.btn:disabled{opacity:.5;cursor:default}
+
+.gruppo{display:flex;flex-direction:column;gap:10px}
+.gruppo h3{font-size:12px;font-weight:600;color:var(--muted);margin:6px 0 0;border-bottom:1px solid var(--line);padding-bottom:4px}
+.riga{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:baseline}
+.riga .nome{font-weight:500;overflow-wrap:anywhere}
+.riga .res{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600;text-align:right}
+.riga .det{font-size:12px;color:var(--muted);grid-column:1/-1}
+.barra{grid-column:1/-1;height:6px;border-radius:3px;background:var(--track);overflow:hidden}
+.barra i{display:block;height:100%;background:var(--ok)}
+.warn .barra i{background:var(--warn)}.over .barra i{background:var(--over)}
+.ok .res{color:var(--ok)}.warn .res{color:var(--warn)}.over .res{color:var(--over)}
+.pill{font:600 11px var(--sans);border:1px solid currentColor;border-radius:99px;padding:0 6px;margin-left:6px;vertical-align:1px}
+.totale{border-top:2px solid var(--ink);padding-top:10px}
+
+.lista{display:flex;flex-direction:column}
+.mov{display:grid;grid-template-columns:3.2em minmax(0,1fr) auto;gap:0 10px;padding:8px 4px;border:0;border-top:1px solid var(--line);background:none;text-align:left;cursor:pointer;width:100%}
+.mov:hover{background:var(--bg)}
+.mov.sel{background:var(--track)}
+.mov .g{color:var(--muted);font-family:var(--mono);font-size:13px}
+.mov .n{overflow-wrap:anywhere}
+.mov .s{font-size:12px;color:var(--muted);grid-column:2}
+.mov .a{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:500;text-align:right;white-space:nowrap}
+.mov .a.pos{color:var(--ok)}
+.vuoto{color:var(--muted);margin:0;padding:8px 0}
+
+details summary{cursor:pointer;font-weight:500}
+.imp{display:grid;grid-template-columns:minmax(0,1fr) 7.5em;gap:6px 10px;align-items:center;margin-top:10px}
+.imp input{padding:6px 8px;font-family:var(--mono);text-align:right}
+.imp small{grid-column:1/-1;color:var(--muted)}
+#toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-weight:500;max-width:calc(100% - 32px)}
+</style>
+</head>
+<body>
+<div class="gate" id="gate">
+  <h1>Conto Spese</h1>
+  <p class="stato" id="gateMsg">Carico…</p>
+  <button class="btn pri" id="login" disabled>Accedi con Google</button>
+</div>
+
+<div class="wrap" id="app" hidden>
+  <div class="top">
+    <h1>Conto Spese</h1>
+    <div class="utente"><span id="email"></span><button class="btn" id="logout">Esci</button></div>
+    <div class="mese">
+      <button class="ico" id="prec" aria-label="Mese precedente">‹</button>
+      <strong id="meseNome"></strong>
+      <button class="ico" id="succ" aria-label="Mese successivo">›</button>
+    </div>
+  </div>
+  <p class="stato" id="stato">Carico i movimenti…</p>
+
+  <div class="sintesi">
+    <div><span>Residuo budget</span><b id="sRes">–</b></div>
+    <div><span>Uscite del mese</span><b id="sUsc">–</b></div>
+    <div><span>Entrate del mese</span><b id="sEnt">–</b></div>
+    <div><span>Netto del mese</span><b id="sNet">–</b></div>
+  </div>
+
+  <div class="griglia">
+    <section class="box" id="boxForm">
+      <h2 id="formTitolo">Nuovo movimento</h2>
+      <form id="form" autocomplete="off">
+        <div class="tipo tutta" role="radiogroup" aria-label="Tipo di movimento">
+          <label><input type="radio" name="tipo" id="tipoU" value="u" checked>Uscita</label>
+          <label><input type="radio" name="tipo" id="tipoE" value="e">Entrata</label>
+        </div>
+        <label class="tutta">Importo (€)<input id="importo" inputmode="decimal" placeholder="0,00" required></label>
+        <label>Categoria<input id="categoria" list="catList" placeholder="vuota = giroconto"></label>
+        <label>Conto<select id="conto"></select></label>
+        <label class="tutta">Nota<input id="nota" placeholder="Es. Spesa, Benzina"></label>
+        <label class="tutta">Data<input id="data" type="date" required></label>
+        <div class="azioni tutta">
+          <button class="btn pri" id="salva" type="submit">Aggiungi</button>
+          <button class="btn peric" id="elimina" type="button" hidden>Elimina</button>
+          <button class="btn" id="annulla" type="button" hidden>Annulla</button>
+        </div>
+      </form>
+      <datalist id="catList"></datalist>
+    </section>
+
+    <section class="box" id="boxBudget">
+      <div class="testa"><h2>Budget del mese</h2><span class="stato">residuo = budget cumulato da gennaio − speso</span></div>
+      <div id="budget"><p class="vuoto">Qui compare quanto resta da spendere per ogni categoria.</p></div>
+      <details id="impostazioni">
+        <summary>Modifica i budget annuali</summary>
+        <div class="imp" id="imp"></div>
+      </details>
+      <details>
+        <summary>Importa movimenti da file</summary>
+        <p class="stato">File JSON nel formato di <code>dati/import-2026.json</code>. I movimenti già presenti con lo stesso identificativo vengono sovrascritti, gli altri restano.</p>
+        <input id="importa" type="file" accept=".json,application/json" aria-label="File da importare">
+      </details>
+    </section>
+
+    <section class="box" id="boxMov">
+      <div class="testa"><h2>Movimenti</h2><span class="stato" id="movConta"></span></div>
+      <input id="cerca" type="search" placeholder="Cerca per nota, categoria o conto" aria-label="Cerca nei movimenti">
+      <div class="lista" id="lista"><p class="vuoto">Qui compaiono i movimenti del mese. Tocca una riga per modificarla.</p></div>
+    </section>
+  </div>
+</div>
+<div id="toast" role="status" hidden></div>
+
+<script src="logic.js"></script>
+<script type="module">
+// shortcut: Firebase comes from the CDN, so a first visit without network shows only "Carico…"; self-host the SDK if that matters.
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+
+const $ = id => document.getElementById(id);
+const eur = new Intl.NumberFormat('it-IT', {style: 'currency', currency: 'EUR'});
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const GRUPPI = ['Spese fisse', 'Spese variabili costanti', 'Spese variabili', 'Spese annuali', 'Spese estemporanee', 'Altro'];
+
+const {parseAmount, net} = window.CSLogic;
+const movs = ym => window.CSLogic.movs(st.mesi, ym);
+const calcola = ym => window.CSLogic.calcola(st.mesi, st.cfg, ym);
+
+const st = {mesi: {}, cfg: {budget: {}, gruppi: {}, categorie: [], conti: []}, ym: todayISO().slice(0, 7), edit: null, q: '', pronto: false};
+function rigaBudget(r) {
+  const cls = r.residuo < -0.005 ? 'over' : (r.disp > 0 && r.speso / r.disp > 0.85 ? 'warn' : 'ok');
+  const pct = r.disp > 0 ? Math.min(100, Math.max(0, r.speso / r.disp * 100)) : (r.speso > 0 || r.residuo < 0 ? 100 : 0);
+  return `<div class="riga ${cls}"><span class="nome">${esc(r.c)}${cls === 'over' ? '<span class="pill">sforato</span>' : ''}</span><span class="res">${eur.format(r.residuo)}</span>
+    <div class="barra"><i style="width:${pct.toFixed(1)}%"></i></div>
+    <span class="det num">speso ${eur.format(r.speso)} di ${eur.format(r.disp)} disponibili</span></div>`;
+}
+
+function render() {
+  const [Y, M] = st.ym.split('-').map(Number);
+  const nome = new Date(Y, M - 1, 1).toLocaleDateString('it-IT', {month: 'long', year: 'numeric'});
+  $('meseNome').textContent = nome;
+  const {righe, senza, ent, usc} = calcola(st.ym);
+  const tot = righe.reduce((t, r) => ({speso: t.speso + r.speso, disp: t.disp + r.disp, residuo: t.residuo + r.residuo}), {speso: 0, disp: 0, residuo: 0});
+  $('sRes').textContent = st.pronto ? eur.format(tot.residuo) : '–';
+  $('sRes').style.color = tot.residuo < 0 ? 'var(--over)' : 'var(--ok)';
+  $('sUsc').textContent = st.pronto ? eur.format(usc) : '–';
+  $('sEnt').textContent = st.pronto ? eur.format(ent) : '–';
+  $('sNet').textContent = st.pronto ? eur.format(ent - usc) : '–';
+
+  if (st.pronto) {
+    let h = '';
+    for (const g of GRUPPI) {
+      const rs = righe.filter(r => r.g === g).sort((a, b) => a.c.localeCompare(b.c, 'it'));
+      if (rs.length) h += `<div class="gruppo"><h3>${esc(g)}</h3>${rs.map(rigaBudget).join('')}</div>`;
+    }
+    if (righe.length) h += `<div class="gruppo totale">${rigaBudget({c: 'Totale', ...tot})}</div>`;
+    if (senza.length) h += `<div class="gruppo"><h3>Senza budget, movimenti del mese</h3>${senza.map(([c, v]) => `<div class="riga"><span class="nome">${esc(c)}</span><span class="res">${eur.format(v)}</span></div>`).join('')}</div>`;
+    $('budget').innerHTML = h || '<p class="vuoto">Nessun budget impostato. Aprine uno da "Modifica i budget annuali".</p>';
+    $('budget').className = 'gruppo';
+
+    const q = st.q.toLowerCase();
+    const tutti = movs(st.ym).sort((a, b) => b.d.localeCompare(a.d) || b.id.localeCompare(a.id));
+    const vis = q ? tutti.filter(m => `${m.n || ''} ${m.c || ''} ${m.k || ''}`.toLowerCase().includes(q)) : tutti;
+    $('movConta').textContent = q ? `${vis.length} di ${tutti.length}` : `${tutti.length}`;
+    $('lista').innerHTML = vis.length ? vis.map(m => `<button type="button" class="mov${st.edit?.id === m.id ? ' sel' : ''}" data-id="${esc(m.id)}">
+      <span class="g">${m.d.slice(8)}/${m.d.slice(5, 7)}</span><span class="n">${esc(m.n || m.c || 'Senza nota')}</span>
+      <span class="a${net(m) > 0 ? ' pos' : ''}">${eur.format(net(m))}</span>
+      <span class="s">${esc(m.c || 'Giroconto')}${m.k ? ' · ' + esc(m.k) : ''}</span></button>`).join('')
+      : `<p class="vuoto">${q ? 'Nessun movimento corrisponde alla ricerca.' : `Nessun movimento a ${esc(nome)}. Aggiungi il primo dal modulo.`}</p>`;
+  }
+
+  const cats = new Set(st.cfg.categorie || []);
+  for (const ym in st.mesi) for (const m of movs(ym)) if (m.c) cats.add(m.c);
+  st.cats = [...cats].sort((a, b) => a.localeCompare(b, 'it'));
+  $('catList').innerHTML = st.cats.map(c => `<option value="${esc(c)}">`).join('');
+  const conto = $('conto').value || ricorda('conto');
+  $('conto').innerHTML = '<option value="">Nessuno</option>' + (st.cfg.conti || []).map(k => `<option>${esc(k)}</option>`).join('');
+  $('conto').value = conto || '';
+  if (!$('imp').contains(document.activeElement)) renderImp();
+}
+
+function renderImp() {
+  if (!$('impostazioni').open) return;
+  $('imp').innerHTML = '<small>Importo annuale in euro; il budget mensile è un dodicesimo. Lascia 0 per togliere il budget.</small>' +
+    (st.cats || []).map((c, i) => `<label for="b${i}" style="color:var(--ink);font-size:14px">${esc(c)}</label><input id="b${i}" inputmode="decimal" data-cat="${esc(c)}" value="${st.cfg.budget?.[c] || 0}">`).join('');
+}
+
+function ricorda(k, v) { try { if (v === undefined) return localStorage.getItem('cs.' + k); localStorage.setItem('cs.' + k, v); } catch { return null; } }
+let tT; function toast(msg) { $('toast').textContent = msg; $('toast').hidden = false; clearTimeout(tT); tT = setTimeout(() => $('toast').hidden = true, 2600); }
+const errore = e => toast('Non salvato: ' + (e?.code === 'permission-denied' ? 'accesso negato dal database' : e?.message || e?.code || 'errore sconosciuto'));
+
+function setEdit(m) {
+  st.edit = m ? {id: m.id, ym: m.d.slice(0, 7)} : null;
+  $('formTitolo').textContent = m ? 'Modifica movimento' : 'Nuovo movimento';
+  $('salva').textContent = m ? 'Salva modifiche' : 'Aggiungi';
+  $('elimina').hidden = $('annulla').hidden = !m;
+  $('elimina').textContent = 'Elimina'; delete $('elimina').dataset.ok;
+  $('tipoE').checked = !!(m && m.e); $('tipoU').checked = !(m && m.e);
+  $('importo').value = m ? String(m.e || m.u || '').replace('.', ',') : '';
+  $('categoria').value = m?.c || '';
+  $('nota').value = m?.n || '';
+  $('data').value = m?.d || todayISO();
+  if (m) $('conto').value = m.k || '';
+}
+
+// Not awaited: without network the promise settles only when the connection is back; the list updates at once from the local cache.
+// merge:true touches only this movement and creates the month if missing.
+const scrivi = (ym, id, corpo) => setDoc(refMese(ym), {mov: {[id]: corpo}}, {merge: true}).catch(errore);
+
+$('form').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const imp = parseAmount($('importo').value);
+  if (!imp) { toast('Scrivi un importo maggiore di zero'); $('importo').focus(); return; }
+  if (!st.uid || !st.pronto) { toast('Il database non è ancora pronto'); return; }
+  const e = $('tipoE').checked;
+  // tutti i campi sempre presenti: update fonde, quindi un campo omesso terrebbe il valore vecchio
+  const m = {d: $('data').value, n: $('nota').value.trim(), e: e ? imp : 0, u: e ? 0 : imp, c: $('categoria').value.trim(), k: $('conto').value, x: 0};
+  const ym = m.d.slice(0, 7), id = st.edit?.id || 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  $('salva').disabled = true;
+  try {
+    scrivi(ym, id, m);
+    if (st.edit && st.edit.ym !== ym) scrivi(st.edit.ym, id, {x: 1});
+    ricorda('conto', m.k);
+    toast(st.edit ? 'Modifiche salvate' : `Aggiunto: ${eur.format(net(m))}${m.c ? ' · ' + m.c : ''}`);
+    if (ym !== st.ym) st.ym = ym;
+    setEdit(null); render(); $('importo').focus();
+  } catch (err) { errore(err); }
+  $('salva').disabled = false;
+});
+
+$('elimina').addEventListener('click', async () => {
+  const b = $('elimina');
+  if (!b.dataset.ok) { b.dataset.ok = 1; b.textContent = 'Conferma eliminazione'; return; }
+  try { scrivi(st.edit.ym, st.edit.id, {x: 1}); toast('Movimento eliminato'); setEdit(null); render(); } catch (err) { errore(err); }
+});
+$('annulla').addEventListener('click', () => { setEdit(null); render(); });
+$('lista').addEventListener('click', ev => {
+  const b = ev.target.closest('.mov'); if (!b) return;
+  const m = movs(st.ym).find(x => x.id === b.dataset.id); if (!m) return;
+  setEdit(m); render(); $('boxForm').scrollIntoView({behavior: 'smooth', block: 'start'});
+});
+$('cerca').addEventListener('input', ev => { st.q = ev.target.value; render(); });
+const sposta = n => { const [Y, M] = st.ym.split('-').map(Number), d = new Date(Y, M - 1 + n, 1); st.ym = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; setEdit(null); render(); };
+$('prec').addEventListener('click', () => sposta(-1));
+$('succ').addEventListener('click', () => sposta(1));
+$('impostazioni').addEventListener('toggle', renderImp);
+$('imp').addEventListener('change', async ev => {
+  const c = ev.target.dataset.cat; if (!c || !st.uid) return;
+  const v = ev.target.value.trim() === '' || ev.target.value.trim() === '0' ? 0 : parseAmount(ev.target.value);
+  if (v === null) { toast('Importo non valido'); return; }
+  try {
+    setDoc(refCfg(), {budget: {[c]: v}}, {merge: true}).catch(errore);
+    toast(`Budget ${c}: ${eur.format(v)} all'anno`);
+  } catch (err) { errore(err); }
+});
+
+$('importa').addEventListener('change', async ev => {
+  const f = ev.target.files[0]; if (!f || !st.uid) return;
+  try {
+    const j = JSON.parse(await f.text());
+    if (!j || typeof j.mesi !== 'object') throw new Error('formato non riconosciuto');
+    const mesi = Object.entries(j.mesi).filter(([ym, m]) => /^\d{4}-\d{2}$/.test(ym) && m && typeof m.mov === 'object');
+    const n = mesi.reduce((t, [, m]) => t + Object.keys(m.mov).length, 0);
+    if (confirm(`Importo ${n} movimenti in ${mesi.length} mesi?`)) {
+      toast('Importo…');
+      await Promise.all([...mesi.map(([ym, m]) => setDoc(refMese(ym), {mov: m.mov}, {merge: true})), j.config && setDoc(refCfg(), j.config, {merge: true})]);
+      toast(`Importati ${n} movimenti`);
+    }
+  } catch (err) { toast('Importazione non riuscita: ' + (err?.message || err)); }
+  ev.target.value = '';
+});
+
+setEdit(null); render();
+
+// The Firebase config is not a secret: the Firestore rules let everyone read and write only users/<own uid>/...
+// Same Firebase project as one-piece-collection-tracker; this app keeps its data in its own collections.
+const app = initializeApp({
+  apiKey: 'AIzaSyAyOxfnUg5Rpcmrt5ej6RNmVtBfaZ-hYUE',
+  authDomain: 'one-piece-tracker-c7b87.firebaseapp.com',
+  projectId: 'one-piece-tracker-c7b87',
+  storageBucket: 'one-piece-tracker-c7b87.firebasestorage.app',
+  messagingSenderId: '249868221431',
+  appId: '1:249868221431:web:d2ee2d5dce5c1ab88c8cf2'
+});
+const auth = getAuth(app);
+// Offline cache: the app opens and saves without network, Firestore sends the writes when it is back.
+const db = initializeFirestore(app, {localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})});
+const refMese = ym => doc(db, 'users', st.uid, 'spese_mesi', ym);
+const refCfg = () => doc(db, 'users', st.uid, 'spese_config', 'main');
+let stop = [];
+
+$('login').addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider())
+  .catch(e => { $('gateMsg').textContent = 'Accesso non riuscito: ' + (e?.code || e?.message || 'errore'); }));
+$('logout').addEventListener('click', () => signOut(auth));
+
+onAuthStateChanged(auth, user => {
+  stop.forEach(f => f()); stop = [];
+  Object.assign(st, {uid: user?.uid || null, pronto: false, mesi: {}, cfg: {budget: {}, gruppi: {}, categorie: [], conti: []}});
+  $('gate').hidden = !!user; $('app').hidden = !user;
+  $('login').disabled = false; $('gateMsg').textContent = 'Accedi con il tuo account Google per usare l\'app.';
+  if (!user) return;
+  $('email').textContent = user.email || '';
+  const stato = $('stato');
+  stato.textContent = 'Carico i movimenti…'; stato.className = 'stato'; stato.hidden = false;
+  const fine = e => { stato.textContent = 'Collegamento al database interrotto: ricarica la pagina. ' + (e?.code || e?.message || ''); stato.className = 'stato err'; stato.hidden = false; };
+  // shortcut: reads every month of every year in one subscription (about 15 KB per month); filter by year when the years become many
+  stop.push(onSnapshot(collection(db, 'users', user.uid, 'spese_mesi'), {includeMetadataChanges: true}, snap => {
+    st.mesi = {}; snap.forEach(d => { st.mesi[d.id] = d.data().mov || {}; });
+    st.pronto = true;
+    stato.textContent = 'Senza rete: vedi i dati salvati su questo dispositivo, le modifiche partono quando torna la connessione.';
+    stato.hidden = !snap.metadata.fromCache;
+    render();
+  }, fine));
+  // shortcut: one budget set for all years; split by year when 2027 has different figures
+  stop.push(onSnapshot(refCfg(), snap => { if (snap.exists()) { st.cfg = {budget: {}, gruppi: {}, categorie: [], conti: [], ...snap.data()}; render(); } }, fine));
+});
+</script>
+</body>
+</html>
