@@ -3,3 +3,7 @@
 dati/
 .env
 *-service-account*.json
+# private planning docs: prompts for other chats, personal numbers
+docs/brief-*.md
+docs/strategia-*.md
+docs/visione.md

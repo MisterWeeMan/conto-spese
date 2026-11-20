@@ -57,3 +57,17 @@ Residual of a category in month M = annual budget / 12 × M + net of the categor
 
 - Google login needs the user's account: Claude cannot test it. The user confirmed on 2026-11-10 that the Google login works on mobile.
 - After a UI change, check the page at phone and desktop width and say what the user should try by hand.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues via `gh` (with the `MisterWeeMan` token prefix). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
