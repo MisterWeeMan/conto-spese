@@ -48,10 +48,10 @@ button,input,select{font:inherit;color:inherit}
 .sintesi span{font-size:12px;color:var(--muted)}
 .sintesi b{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:18px;font-weight:600}
 
-.griglia{display:grid;gap:16px;grid-template-columns:minmax(0,1fr);grid-template-areas:"form" "budget" "mov"}
-@media (min-width:900px){.griglia{grid-template-columns:minmax(320px,400px) minmax(0,1fr);grid-template-areas:"form budget" "mov budget";align-items:start}}
+.griglia{display:grid;gap:16px;grid-template-columns:minmax(0,1fr);grid-template-areas:"form" "mov"}
+@media (min-width:900px){.griglia{grid-template-columns:minmax(320px,400px) minmax(0,1fr);grid-template-areas:"form mov";align-items:start}}
 .box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}
-#boxForm{grid-area:form}#boxBudget{grid-area:budget}#boxMov{grid-area:mov}
+#boxForm{grid-area:form}#boxMov{grid-area:mov}
 .testa{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
 
 form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -128,6 +128,7 @@ details summary{cursor:pointer;font-weight:500}
     <nav>
       <button class="ico" id="menuChiudi" type="button" aria-label="Chiudi menu">×</button>
       <a href="#">Registro</a>
+      <a href="#budget">Budget</a>
       <a href="#categorie">Categorie</a>
     </nav>
   </dialog>
@@ -166,6 +167,17 @@ details summary{cursor:pointer;font-weight:500}
     </section>
   </div>
 
+  <div class="due" id="pagBudget" hidden>
+    <section class="box" id="boxBudget">
+      <div class="testa"><h2>Budget del mese</h2><span class="stato">residuo = budget cumulato da gennaio − speso</span></div>
+      <div id="budget"><p class="vuoto">Qui compare quanto resta da spendere per ogni categoria.</p></div>
+      <details id="impostazioni">
+        <summary>Modifica i budget annuali</summary>
+        <div class="imp" id="imp"></div>
+      </details>
+    </section>
+  </div>
+
   <div class="pag" id="pagRegistro">
   <div class="sintesi">
     <div><span>Residuo budget</span><b id="sRes">–</b></div>
@@ -196,24 +208,15 @@ details summary{cursor:pointer;font-weight:500}
       <datalist id="catList"></datalist>
     </section>
 
-    <section class="box" id="boxBudget">
-      <div class="testa"><h2>Budget del mese</h2><span class="stato">residuo = budget cumulato da gennaio − speso</span></div>
-      <div id="budget"><p class="vuoto">Qui compare quanto resta da spendere per ogni categoria.</p></div>
-      <details id="impostazioni">
-        <summary>Modifica i budget annuali</summary>
-        <div class="imp" id="imp"></div>
-      </details>
+    <section class="box" id="boxMov">
+      <div class="testa"><h2>Movimenti</h2><span class="stato" id="movConta"></span></div>
+      <input id="cerca" type="search" placeholder="Cerca per nota, categoria o conto" aria-label="Cerca nei movimenti">
+      <div class="lista" id="lista"><p class="vuoto">Qui compaiono i movimenti del mese. Tocca una riga per modificarla.</p></div>
       <details>
         <summary>Importa movimenti da file</summary>
         <p class="stato">File JSON nel formato di <code>dati/import-2026.json</code>. I movimenti già presenti con lo stesso identificativo vengono sovrascritti, gli altri restano.</p>
         <input id="importa" type="file" accept=".json,application/json" aria-label="File da importare">
       </details>
-    </section>
-
-    <section class="box" id="boxMov">
-      <div class="testa"><h2>Movimenti</h2><span class="stato" id="movConta"></span></div>
-      <input id="cerca" type="search" placeholder="Cerca per nota, categoria o conto" aria-label="Cerca nei movimenti">
-      <div class="lista" id="lista"><p class="vuoto">Qui compaiono i movimenti del mese. Tocca una riga per modificarla.</p></div>
     </section>
   </div>
   </div>
@@ -450,10 +453,12 @@ $('catLista').addEventListener('click', ev => {
 $('menuApri').addEventListener('click', () => $('menu').showModal());
 $('menu').addEventListener('click', ev => { if (ev.target === $('menu') || ev.target.closest('a,#menuChiudi')) $('menu').close(); });
 function pagina() {
-  const cat = location.hash === '#categorie';
-  $('pagCategorie').hidden = !cat; $('pagRegistro').hidden = $('mese').hidden = cat;
-  $('titolo').textContent = cat ? 'Categorie' : 'Conto Spese';
-  for (const a of $('menu').querySelectorAll('a')) (a.hash === '#categorie') === cat ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
+  const titoli = {'#categorie': 'Categorie', '#budget': 'Budget'};
+  const p = titoli[location.hash] ? location.hash : ''; // any other hash is the ledger
+  $('pagCategorie').hidden = p !== '#categorie'; $('mese').hidden = p === '#categorie'; // the month matters for ledger and budget
+  $('pagBudget').hidden = p !== '#budget'; $('pagRegistro').hidden = !!p;
+  $('titolo').textContent = titoli[p] || 'Conto Spese';
+  for (const a of $('menu').querySelectorAll('a')) a.hash === p ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
 }
 addEventListener('hashchange', pagina); pagina();
 
