@@ -19,6 +19,16 @@
 
   function net(m) { return (m.e || 0) - (m.u || 0); }
 
+  // My part of a movement: p if set, else u (e for income). Transfers (g), partner top-ups (vj)
+  // and credits (cr) are not mine.
+  function mia(m) {
+    if (m.t === 'g' || m.t === 'vj' || m.t === 'cr') return 0;
+    return m.p != null ? m.p : (m.u || m.e || 0);
+  }
+
+  // Money others owe me on a split expense: u - p in cents, never negative; else 0.
+  function credito(m) { return m.p != null && m.u ? Math.max(0, Math.round((m.u - m.p) * 100) / 100) : 0; }
+
   // Same rule as the sheet's Budget tab: what was not spent (or overspent) in the
   // previous months of the year carries over. residuo = annual/12 * month + net YTD.
   function calcola(mesi, cfg, ym) {
@@ -66,7 +76,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, calcola: calcola, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, calcola: calcola, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

@@ -59,3 +59,36 @@ test('calcola does not carry over across years', () => {
   const mesi = {'2025-12': {a: {d: '2025-12-05', u: 999, c: 'Bar'}}};
   assert.strictEqual(L.calcola(mesi, {budget: {Bar: 120}}, '2026-01').righe[0].residuo, 10);
 });
+
+test('mia: a Joint expense counts only my share', () => {
+  assert.strictEqual(L.mia({d: '2026-03-01', u: 100, p: 56, q: 56, c: 'Bollette', k: 'Joint'}), 56);
+});
+
+test('mia: old movements, transfers, top-ups and credits', () => {
+  assert.strictEqual(L.mia({d: '2026-03-01', u: 12.5}), 12.5);          // no new fields: same as before
+  assert.strictEqual(L.mia({d: '2026-03-01', e: 30}), 30);              // income
+  assert.strictEqual(L.mia({d: '2026-03-01', u: 200, k: 'A', a: 'B', t: 'g'}), 0);
+  assert.strictEqual(L.mia({d: '2026-03-01', e: 150, k: 'Joint', t: 'vj'}), 0);
+  assert.strictEqual(L.mia({d: '2026-03-01', u: 40, t: 'cr'}), 0);
+});
+
+test('credito is what others owe on a split expense', () => {
+  assert.strictEqual(L.credito({d: '2026-03-01', u: 90, p: 30}), 60);
+  assert.strictEqual(L.credito({d: '2026-03-01', u: 90}), 0);
+  assert.strictEqual(L.credito({d: '2026-03-01', e: 50}), 0);
+});
+
+test('movs keeps the optional fields p, q, l, a, t untouched', () => {
+  const mesi = {'2026-03': {a: {d: '2026-03-01', u: 100, p: 56, q: 56, l: ['x', 'y'], a: 'B', t: 'g'}}};
+  assert.deepStrictEqual(L.movs(mesi, '2026-03')[0], {id: 'a', d: '2026-03-01', u: 100, p: 56, q: 56, l: ['x', 'y'], a: 'B', t: 'g'});
+});
+
+test('mia and credito: p of zero means everything is credit', () => {
+  assert.strictEqual(L.mia({d: '2026-03-01', u: 50, p: 0}), 0);
+  assert.strictEqual(L.credito({d: '2026-03-01', u: 50, p: 0}), 50);
+});
+
+test('credito is rounded to cents and never negative', () => {
+  assert.strictEqual(L.credito({d: '2026-03-01', u: 100, p: 56.1}), 43.9);
+  assert.strictEqual(L.credito({d: '2026-03-01', u: 50, p: 80}), 0);
+});
