@@ -154,8 +154,21 @@
     (c.controlli || []).forEach(function (x) {
       if (!day.test(x.d || '') || !real(x.d) || conti.indexOf(x.k) < 0 || !num(x.banca) || !num(x.strumento) || !num(x.diff)) err.push('Check ' + x.d + ' ' + x.k + ' is not valid');
     });
+    var haSS = function (k, n) { return (c.conti || []).some(function (x) { return x.nome === k && (x.sottosaldi || []).some(function (s) { return s.nome === n; }); }); };
+    (c.conti || []).forEach(function (x) {
+      var seen = {};
+      (x.sottosaldi || []).forEach(function (s) {
+        var k = String(s.nome || '').toLowerCase();
+        if (!k || seen[k]) err.push('Sub-balance of ' + x.nome + ' without name or duplicated: ' + s.nome);
+        seen[k] = 1;
+        if (s.saldoIniziale && (!day.test(s.saldoIniziale.data || '') || !real(s.saldoIniziale.data) || !num(s.saldoIniziale.importo))) err.push('Opening balance of sub-balance ' + s.nome + ' is not valid');
+      });
+    });
+    var inv = c.investimenti;
+    if (inv && !haSS(inv.conto, inv.sottosaldo)) err.push('investimenti: sub-balance ' + inv.sottosaldo + ' of ' + inv.conto + ' does not exist');
+    (inv && inv.valore || []).forEach(function (v) { if (!day.test(v.d || '') || !real(v.d) || !num(v.importo) || v.importo < 0) err.push('investimenti: value ' + v.d + ' is not valid'); });
     var fe = c.fondoEmergenze;
-    if (fe && !(c.salvadanai || []).some(function (v) { return v.nome === fe.sottosaldo; })) err.push('fondoEmergenze: pot ' + fe.sottosaldo + ' does not exist');
+    if (fe && !haSS(fe.conto, fe.sottosaldo) && !(c.salvadanai || []).some(function (v) { return v.nome === fe.sottosaldo; })) err.push('fondoEmergenze: pot or sub-balance ' + fe.sottosaldo + ' does not exist');
     if (fe && fe.obiettivo != null && !(num(fe.obiettivo) && fe.obiettivo >= 0)) err.push('fondoEmergenze: goal is not valid');
     (c.quotaJoint || []).forEach(function (q) { if (!day.test(q.da || '') || !real(q.da) || !(q.pct > 0 && q.pct <= 100)) err.push('quotaJoint entry ' + q.da + ' is not valid'); });
     (c.soglie || []).forEach(function (s) { if (!(s > 0)) err.push('soglie value ' + s + ' is not valid'); });
@@ -225,6 +238,55 @@
   // Open accounts whose check is late (closed accounts are not asked for new checks).
   function controlliInRitardo(cfg, oggi) {
     return (cfg.conti || []).filter(function (c) { return !c.chiuso && controlloScaduto(cfg, c.nome, oggi); }).map(function (c) { return c.nome; });
+  }
+
+  // Sub-balances of an account (3.2, Trade Republic): cfg.conti[].sottosaldi = [{nome, saldoIniziale?: {data, importo}}]. A row with ss
+  // = name moves that sub-balance: a transfer into an account that has it counts + on the arrival side, else - on the departure side;
+  // any other row moves it by e - u. Rows with no ss, or a name the account does not have, stay "not assigned".
+  // shortcut: no transfer between two sub-balances of the same account (one ss per row); add a second field if it is needed.
+  function latoSS(cfg, m) {
+    var has = function (k) { return (cfg.conti || []).some(function (c) { return c.nome === k && (c.sottosaldi || []).some(function (s) { return s.nome === m.ss; }); }); };
+    if (!m.ss) return null;
+    if (m.t === 'g') return has(m.a) ? {k: m.a, d: m.u || 0} : has(m.k) ? {k: m.k, d: -(m.u || 0)} : null;
+    return has(m.k) ? {k: m.k, d: net(m)} : null;
+  }
+  // Balance of sub-balance nome of account conto: its opening balance + the rows of ss = nome dated from the later of its opening date
+  // and the account's (earlier rows are inside them), up to finoA (optional). 0 when the account or sub-balance is missing.
+  function sottosaldo(mesi, cfg, conto, nome, finoA) {
+    var c = (cfg.conti || []).find(function (x) { return x.nome === conto; }), s = c && (c.sottosaldi || []).find(function (x) { return x.nome === nome; });
+    if (!s) return 0;
+    var da = [s.saldoIniziale && s.saldoIniziale.data, c.saldoIniziale && c.saldoIniziale.data].filter(Boolean).sort().pop() || '0000-01-01', tot = s.saldoIniziale ? s.saldoIniziale.importo : 0;
+    Object.keys(mesi).forEach(function (ym) {
+      movs(mesi, ym).forEach(function (m) {
+        var l = m.ss === nome && m.d >= da && !(finoA && m.d > finoA) && latoSS(cfg, m);
+        if (l && l.k === conto) tot += l.d;
+      });
+    });
+    return Math.round(tot * 100) / 100;
+  }
+  // The whole account (saldi(): the figure to compare with the bank app), its sub-balances and what is not assigned to any of them
+  // (balance - sum of the sub-balances, which can be negative); null when the account has no sub-balances.
+  function sottosaldiConto(mesi, cfg, conto, finoA) {
+    var c = (cfg.conti || []).find(function (x) { return x.nome === conto; });
+    if (!c || !(c.sottosaldi || []).length) return null;
+    var saldo = saldi(mesi, cfg, finoA)[conto] || 0, ss = c.sottosaldi.map(function (s) { return {nome: s.nome, saldo: sottosaldo(mesi, cfg, conto, s.nome, finoA)}; });
+    var somma = ss.reduce(function (t, s) { return t + s.saldo; }, 0);
+    return {saldo: saldo, sottosaldi: ss, nonAssegnato: Math.round((saldo - somma) * 100) / 100};
+  }
+  // Investments (B8) = cfg.investimenti {conto, sottosaldo, valore: [{d, importo}]}: versato = balance of the sub-balance (opening + net money
+  // put in); valore = the latest manual value dated up to finoA (default: no limit) with its date; diff = valore - versato, the gain or loss.
+  // valore, data and diff are null until a value is typed. null when there is no config or the sub-balance does not exist.
+  function investimenti(mesi, cfg, finoA) {
+    var i = cfg.investimenti, c = i && (cfg.conti || []).find(function (x) { return x.nome === i.conto; });
+    if (!c || !(c.sottosaldi || []).some(function (s) { return s.nome === i.sottosaldo; })) return null;
+    var versato = sottosaldo(mesi, cfg, i.conto, i.sottosaldo, finoA);
+    var v = (i.valore || []).filter(function (x) { return !finoA || x.d <= finoA; }).sort(function (a, b) { return a.d < b.d ? -1 : a.d > b.d ? 1 : 0; }).pop();
+    return {versato: versato, valore: v ? v.importo : null, data: v ? v.d : null, diff: v ? Math.round((v.importo - versato) * 100) / 100 : null};
+  }
+  // The investments part of the net worth (3.4): the value, never the paid in. shortcut: until a first value is typed it falls back to the paid in; 0 without investments.
+  function valoreInvestimenti(mesi, cfg, finoA) {
+    var i = investimenti(mesi, cfg, finoA);
+    return !i ? 0 : i.valore != null ? i.valore : i.versato;
   }
 
   // Month figures with MONTHLY budgets, no carry-over (spec rules 2-4). cfg.categorie = [{nome, gruppo, budget, archiviata}];
@@ -350,7 +412,7 @@
     var pots = cfg.salvadanai || [], ym = m.d.slice(0, 7);
     var ha = function (n) { return pots.some(function (v) { return v.nome === n; }); };
     var fe = cfg.fondoEmergenze || {}; // the fund goal set in 2.7 wins over the pot's own obiettivo
-    var manca = function (v) { var o = v.nome === fe.sottosaldo && fe.obiettivo > 0 ? fe.obiettivo : v.obiettivo; return o > 0 ? o - saldoSalvadanaio(mesi, v, ym) : 0; };
+    var manca = function (v) { var o = v.nome === fe.sottosaldo && fe.obiettivo > 0 ? fe.obiettivo : v.obiettivo; var f = v.nome === fe.sottosaldo && fondoEmergenze(mesi, cfg, ym); return o > 0 ? o - (f ? f.saldo : saldoSalvadanaio(mesi, v, ym)) : 0; }; // the fund balance may come from its sub-balance (3.2)
     if (((m.l || []).some(function (l) { return String(l).toLowerCase() === 'tcg'; }) || (m.c && m.c === x.carte)) && ha(x.tcg)) return {b: x.tcg, motivo: 'Vendita di carte: va al fondo TCG'};
     if (m.e < x.soglia) return {b: x.cuscinetto, motivo: 'Sotto ' + x.soglia + ' €: nel cuscinetto'};
     var em = pots.find(function (v) { return v.nome === (fe.sottosaldo || x.emergenze); });
@@ -371,21 +433,24 @@
   // shortcut: the goal is a fixed number, not tied to seiMesi; the check is only shown in January and July (no push notification).
   function fondoEmergenze(mesi, cfg, ym) {
     var fe = cfg.fondoEmergenze, r2 = function (x) { return Math.round(x * 100) / 100; };
+    var ss = fe && (cfg.conti || []).some(function (c) { return c.nome === fe.conto && (c.sottosaldi || []).some(function (s) { return s.nome === fe.sottosaldo; }); });
     var sv = fe && (cfg.salvadanai || []).find(function (v) { return v.nome === fe.sottosaldo; });
-    if (!sv) return null;
+    if (!sv && !ss) return null;
     var nec = 0;
     (cfg.categorie || []).forEach(function (c) { if (!c.archiviata && c.gruppo === 'Necessarie' && c.budget > 0) nec += c.budget; });
-    (cfg.salvadanai || []).forEach(function (v) { if (v !== sv && v.gruppo === 'Necessarie') nec += quotaSalvadanaio(v, ym); });
+    (cfg.salvadanai || []).forEach(function (v) { if (fe.sottosaldo !== v.nome && v.gruppo === 'Necessarie') nec += quotaSalvadanaio(v, ym); });
     nec = r2(nec);
-    var saldo = saldoSalvadanaio(mesi, sv, ym), ob = fe.obiettivo || 0;
+    var saldo = ss ? sottosaldo(mesi, cfg, fe.conto, fe.sottosaldo, ym + '-31') : saldoSalvadanaio(mesi, sv, ym), ob = fe.obiettivo || 0;
     return {saldo: saldo, obiettivo: ob, necessarie: nec, mesi: nec > 0 ? r2(saldo / nec) : 0, seiMesi: r2(6 * nec),
       manca: r2(Math.max(0, ob - saldo)), sotto: saldo < ob, promemoria: ym.slice(5) === '01' || ym.slice(5) === '07'};
   }
 
-  // True when m is a plain expense from the emergency fund pot without a note (every use needs one, spec rule 15).
+  // True when m is a plain expense from the emergency fund (pot or sub-balance) or a transfer out of its sub-balance, without a note (every use needs one, spec rule 15).
   function usoFondoSenzaNota(cfg, m) {
     var fe = cfg.fondoEmergenze;
-    return !!fe && m.c === fe.sottosaldo && m.u > 0 && !m.t && !String(m.n || '').trim();
+    if (!fe || !(m.u > 0) || String(m.n || '').trim()) return false;
+    var l = m.ss === fe.sottosaldo && (!m.t || m.t === 'g') && latoSS(cfg, m); // charged to the fund sub-balance, or a transfer out of it
+    return (!m.t && m.c === fe.sottosaldo) || (!!l && l.k === fe.conto && l.d < 0);
   }
 
   // What a new or edited expense m cannot take from its pot: the deepest shortfall of the balance from m's month to the
@@ -488,7 +553,7 @@
     return out;
   }
 
-  var api = {riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, sottosaldo: sottosaldo, sottosaldiConto: sottosaldiConto, investimenti: investimenti, valoreInvestimenti: valoreInvestimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();
