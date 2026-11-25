@@ -7,7 +7,7 @@ Ogni attività è piccola e si prova su soldi veri (o dati di prova) prima della
 | # | Attività | Dipende da | Data |
 |---|---|---|---|
 | 1.1 ✔ | Nuovo formato movimento in `logic.js`: `p`, `q`, `l`, `a`, `t`, con test. `parseAmount`, `movs`, `net` restano. Fatto: `mia` e `credito`, commit `9bdfb8d` (locale). Da ricordare in 1.7: `mia` deve dare 0 anche per `t: rb` (rimborso) e `t: x2` (entrata extra). | — | 23/11 |
-| 1.2 | Configurazione: categorie con gruppo, conti con flag `chiuso`, `quotaJoint` con data. Test sulla quota valida in una data. | 1.1 | 24/11 |
+| 1.2 ✔ | Configurazione: categorie con gruppo, conti con flag `chiuso`, `quotaJoint` con data. Test sulla quota valida in una data. Fatto: `quotaJoint` (null se nessuna voce vale), `contiAttivi`, `categorieAttive`. Leggono la config nuova (oggetti): `categorie()` e `calcola` leggono ancora la vecchia, da sostituire in 1.7. | 1.1 | 24/11 |
 | 1.3 | Giroconto in una riga (da → a), fuori dai totali. | 1.1 | 25/11 |
 | 1.4 | Quota Joint automatica: `u` intero, `p` calcolata, `q` salvata. | 1.2 | 25/11 |
 | 1.5 | Spesa divisa con altri e credito aperto, rimborso che lo chiude. | 1.1 | 26/11 |

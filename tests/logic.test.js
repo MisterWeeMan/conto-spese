@@ -92,3 +92,25 @@ test('credito is rounded to cents and never negative', () => {
   assert.strictEqual(L.credito({d: '2026-03-01', u: 100, p: 56.1}), 43.9);
   assert.strictEqual(L.credito({d: '2026-03-01', u: 50, p: 80}), 0);
 });
+
+test('quotaJoint picks the latest share that started on or before the date', () => {
+  const cfg = {quotaJoint: [{da: '2026-06-01', pct: 60}, {da: '2025-01-01', pct: 56}, {da: '2027-01-01', pct: 50}]};
+  assert.strictEqual(L.quotaJoint(cfg, '2025-12-31'), 56);
+  assert.strictEqual(L.quotaJoint(cfg, '2026-06-01'), 60);
+  assert.strictEqual(L.quotaJoint(cfg, '2026-12-31'), 60);
+  assert.strictEqual(L.quotaJoint(cfg, '2027-01-01'), 50);
+  assert.strictEqual(L.quotaJoint(cfg, '2024-12-31'), null);
+  assert.strictEqual(L.quotaJoint({}, '2026-01-01'), null);
+});
+
+test('contiAttivi leaves out closed accounts', () => {
+  const cfg = {conti: [{nome: 'A'}, {nome: 'Old', chiuso: true}, {nome: 'B', chiuso: false}]};
+  assert.deepStrictEqual(L.contiAttivi(cfg).map(c => c.nome), ['A', 'B']);
+  assert.deepStrictEqual(L.contiAttivi({}), []);
+});
+
+test('categorieAttive leaves out archived categories and keeps the group', () => {
+  const cfg = {categorie: [{nome: 'Spesa', gruppo: 'Necessarie'}, {nome: 'Viaggio Jap', gruppo: 'Viaggi', archiviata: true}]};
+  assert.deepStrictEqual(L.categorieAttive(cfg), [{nome: 'Spesa', gruppo: 'Necessarie'}]);
+  assert.deepStrictEqual(L.categorieAttive({}), []);
+});

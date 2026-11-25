@@ -29,6 +29,21 @@
   // Money others owe me on a split expense: u - p in cents, never negative; else 0.
   function credito(m) { return m.p != null && m.u ? Math.max(0, Math.round((m.u - m.p) * 100) / 100) : 0; }
 
+  // Joint share (pct) in force on date 'YYYY-MM-DD': the entry with the latest `da` not after it, else null.
+  function quotaJoint(cfg, data) {
+    var best = null;
+    (cfg.quotaJoint || []).forEach(function (q) { if (q.da <= data && (!best || q.da > best.da)) best = q; });
+    return best ? best.pct : null;
+  }
+
+  // Accounts that accept new movements. shortcut: reads the new cfg.conti ({nome, chiuso}); the stored
+  // config is still a list of strings until the migration.
+  function contiAttivi(cfg) { return (cfg.conti || []).filter(function (c) { return !c.chiuso; }); }
+
+  // Categories open to new movements, with their gruppo. shortcut: new cfg.categorie ({nome, gruppo, ...});
+  // not the same as categorie() below, which still reads the old list of strings.
+  function categorieAttive(cfg) { return (cfg.categorie || []).filter(function (c) { return !c.archiviata; }); }
+
   // Same rule as the sheet's Budget tab: what was not spent (or overspent) in the
   // previous months of the year carries over. residuo = annual/12 * month + net YTD.
   function calcola(mesi, cfg, ym) {
@@ -76,7 +91,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, calcola: calcola, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, quotaJoint: quotaJoint, contiAttivi: contiAttivi, categorieAttive: categorieAttive, calcola: calcola, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();
