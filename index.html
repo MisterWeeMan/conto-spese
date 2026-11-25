@@ -959,7 +959,7 @@ $('catLista').addEventListener('click', ev => {
 $('catLista').addEventListener('change', ev => {
   const nome = ev.target.dataset.pri; if (nome === undefined) return;
   const ts = ev.target.value.trim(), taglio = ts ? Number(ts) : null;
-  if (ts && !(/^d+$/.test(ts) && taglio > 0)) { toast('Priorità di taglio non valida: un numero intero da 1'); render(); return; }
+  if (ts && !(/^\d+$/.test(ts) && taglio > 0)) { toast('Priorità di taglio non valida: un numero intero da 1'); render(); return; }
   const mod = window.CSLogic.riordinaTaglio(st.catInfo, nome, taglio);
   if (!Object.keys(mod).length) { render(); return; }
   const lista = st.cfg.categorie.map(c => c.nome in mod ? {...c, taglio: mod[c.nome]} : c);
