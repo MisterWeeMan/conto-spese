@@ -932,3 +932,151 @@ test('chiusura: a pot cannot give money a later month already spent, and a closi
   assert.strictEqual(L.chiusuraStato(cfg, '2026-01', mesi2).puoRiaprire, false);
   assert.strictEqual(L.chiusuraStato(cfg, '2026-01', mesi).puoRiaprire, true);
 });
+
+// ---- 3.4: net worth, its monthly series, summary per group, savings rate (made-up data) ----
+const cfgW = () => ({
+  conti: [
+    {nome: 'Banca', saldoIniziale: {data: '2026-01-01', importo: 1000}},
+    {nome: 'Cond', joint: true, saldoIniziale: {data: '2026-01-01', importo: 2000}},
+    {nome: 'Broker', saldoIniziale: {data: '2026-01-01', importo: 500}, sottosaldi: [{nome: 'Emerg', saldoIniziale: {data: '2026-01-01', importo: 300}}, {nome: 'Inv', saldoIniziale: {data: '2026-01-01', importo: 150}}]},
+  ],
+  quotaJoint: [{da: '2026-01-01', pct: 50}],
+  investimenti: {conto: 'Broker', sottosaldo: 'Inv', valore: [{d: '2026-02-01', importo: 200}]},
+});
+const pv = (r, nome) => r.componenti.find(c => c.nome === nome).importo;
+
+test('patrimonio: accounts, Joint at my share, investments at value, no double count of the sub-balance', () => {
+  const r = L.patrimonio({}, cfgW(), '2026-03-01');
+  assert.strictEqual(pv(r, 'Banca'), 1000);
+  assert.strictEqual(pv(r, 'Cond'), 1000); // 50% of 2000
+  assert.strictEqual(pv(r, 'Broker'), 350); // 500 minus the 150 paid into investments (those are counted at value)
+  assert.strictEqual(pv(r, 'Investimenti'), 200);
+  assert.strictEqual(r.totale, 2550);
+  assert.strictEqual(L.patrimonio({}, cfgW(), '2026-01-15').totale, 2500); // no value typed yet: paid in
+});
+
+test('patrimonio: the Joint uses the share in force at the date; a partner top-up counts only at my share', () => {
+  const cfg = cfgW(); cfg.quotaJoint.push({da: '2026-03-01', pct: 60});
+  const mesi = {'2026-02': {a: {d: '2026-02-10', e: 400, k: 'Cond', t: 'vj'}}};
+  assert.strictEqual(pv(L.patrimonio(mesi, cfg, '2026-02-28'), 'Cond'), 1200); // (2000+400) x 50%
+  assert.strictEqual(pv(L.patrimonio(mesi, cfg, '2026-03-31'), 'Cond'), 1440); // x 60%
+  assert.strictEqual(L.patrimonio({}, cfgW(), '2026-03-01').componenti.find(c => c.nome === 'Cond').saldo, 2000);
+  const sq = cfgW(); sq.quotaJoint = [];
+  const r = L.patrimonio({}, sq, '2026-03-01');
+  assert.strictEqual(pv(r, 'Cond'), 0); assert.strictEqual(r.senzaQuota, true);
+});
+
+test('patrimonio: a transfer between accounts changes nothing; spending does', () => {
+  const mesi = {'2026-02': {a: {d: '2026-02-05', u: 100, k: 'Banca', a: 'Broker', t: 'g'}}};
+  assert.strictEqual(L.patrimonio(mesi, cfgW(), '2026-03-01').totale, 2550);
+  mesi['2026-02'].b = {d: '2026-02-06', u: 30, k: 'Banca', c: 'X'};
+  assert.strictEqual(L.patrimonio(mesi, cfgW(), '2026-03-01').totale, 2520);
+});
+
+test('patrimonio: money paid into investments moves from the account to the paid in; the value decides the total', () => {
+  const mesi = {'2026-02': {a: {d: '2026-02-12', u: 50, k: 'Banca', a: 'Broker', t: 'g', ss: 'Inv'}}};
+  const r = L.patrimonio(mesi, cfgW(), '2026-03-01'); // paid in 200, value still 200: Banca -50, investments value unchanged, Broker -50 + 50 paid in
+  assert.strictEqual(r.totale, 2500);
+  assert.strictEqual(pv(r, 'Broker'), 350); assert.strictEqual(pv(r, 'Banca'), 950);
+});
+
+test('patrimonio: a closed account keeps what it holds; an account not yet opened at the date is left out and flagged', () => {
+  const cfg = cfgW(); cfg.conti.push({nome: 'Old', chiuso: true, saldoIniziale: {data: '2026-01-01', importo: 40}});
+  assert.strictEqual(pv(L.patrimonio({}, cfg, '2026-03-01'), 'Old'), 40);
+  cfg.conti[0].saldoIniziale.data = '2026-02-01';
+  const r = L.patrimonio({}, cfg, '2026-01-31');
+  assert.strictEqual(r.componenti.some(c => c.nome === 'Banca'), false);
+  assert.strictEqual(r.parziale, true);
+});
+
+test('patrimonio: an open account without an opening balance is flagged; the TCG stock counts from its date; open credits are shown apart', () => {
+  const cfg = cfgW(); delete cfg.conti[0].saldoIniziale;
+  assert.deepStrictEqual(L.patrimonio({}, cfg, '2026-03-01').senzaSaldo, ['Banca']);
+  assert.deepStrictEqual(L.patrimonio({}, cfgW(), '2026-03-01').senzaSaldo, []);
+  const c2 = cfgW(); c2.magazzinoTCG = [{d: '2026-02-10', importo: 80}, {d: '2026-03-01', importo: 120}];
+  assert.strictEqual(L.patrimonio({}, c2, '2026-02-01').totale, 2550);
+  assert.strictEqual(L.patrimonio({}, c2, '2026-02-20').totale, 2630);
+  assert.strictEqual(L.patrimonio({}, c2, '2026-03-05').totale, 2670);
+  const c3 = cfgW(); c3.magazzinoTCG = 60; // a bare number is accepted
+  assert.strictEqual(pv(L.patrimonio({}, c3, '2026-03-01'), 'Magazzino TCG'), 60);
+  const mesi = {'2026-02': {a: {d: '2026-02-05', u: 100, p: 60, k: 'Banca', c: 'Cena'}}};
+  const r = L.patrimonio(mesi, cfgW(), '2026-03-01');
+  assert.strictEqual(r.crediti, 40); assert.strictEqual(r.totale, 2450);
+});
+
+test('patrimonioSerie: end of every month from the oldest data to today, with the change on the month before', () => {
+  const mesi = {'2026-01': {a: {d: '2026-01-10', u: 100, k: 'Banca', c: 'X'}}, '2026-03': {b: {d: '2026-03-03', e: 500, k: 'Banca', c: 'Stip'}}};
+  const s = L.patrimonioSerie(mesi, cfgW(), '2026-03-20');
+  assert.deepStrictEqual(s.map(x => x.ym), ['2026-01', '2026-02', '2026-03']);
+  assert.deepStrictEqual(s.map(x => x.totale), [2400, 2450, 2950]); // Feb: the investments get their value (200 vs 150)
+  assert.deepStrictEqual(s.map(x => x.delta), [null, 50, 500]);
+  assert.strictEqual(s[0].parziale, false);
+  const cfg = cfgW(); cfg.conti[0].saldoIniziale.data = '2026-02-01';
+  assert.strictEqual(L.patrimonioSerie(mesi, cfg, '2026-03-20')[0].parziale, true);
+  assert.deepStrictEqual(L.patrimonioSerie({}, cfgW(), '2026-03-20'), []);
+});
+
+const cfgG = () => ({
+  categorie: [
+    {nome: 'Affitto', gruppo: 'Necessarie', budget: 500}, {nome: 'Cena', gruppo: 'Non necessarie', budget: 200},
+    {nome: 'Stipendio', entrata: true, finanzia: true},
+  ],
+  salvadanai: [
+    {nome: 'Cuscinetto', gruppo: 'Risparmi', conto: 'Banca', quota: 100, saldoIniziale: {data: '2026-01-01', importo: 0}},
+    {nome: 'Viaggi di coppia', gruppo: 'Risparmi', conto: 'Banca', quota: 50, saldoIniziale: {data: '2026-01-01', importo: 0}},
+    {nome: 'Auto', gruppo: 'Necessarie', conto: 'Banca', quota: 30, saldoIniziale: {data: '2026-01-01', importo: 0}},
+  ],
+  conti: [{nome: 'Banca', saldoIniziale: {data: '2026-01-01', importo: 0}}, {nome: 'Broker', sottosaldi: [{nome: 'Inv'}]}],
+  investimenti: {conto: 'Broker', sottosaldo: 'Inv'},
+});
+const mesiG = () => ({'2026-02': {
+  s: {d: '2026-02-05', e: 2000, k: 'Banca', c: 'Stipendio'},
+  a: {d: '2026-02-06', u: 500, k: 'Banca', c: 'Affitto'}, b: {d: '2026-02-09', u: 250, k: 'Banca', c: 'Cena'},
+  c: {d: '2026-02-12', u: 20, k: 'Banca', c: 'Auto'},
+  g: {d: '2026-02-12', u: 50, k: 'Banca', a: 'Broker', t: 'g', ss: 'Inv'},
+}});
+
+test('riepilogoGruppi: per group the plan budget, what was spent, the residual and the shares of the salary', () => {
+  const r = L.riepilogoGruppi(mesiG(), cfgG(), '2026-02');
+  assert.strictEqual(r.stipendio, 2000); assert.strictEqual(r.fonte, 'incassato');
+  const g = n => r.gruppi.find(x => x.gruppo === n);
+  assert.deepStrictEqual([g('Necessarie').budget, g('Necessarie').speso, g('Necessarie').residuo], [530, 520, 10]);
+  assert.deepStrictEqual([g('Non necessarie').budget, g('Non necessarie').speso, g('Non necessarie').residuo], [200, 250, -50]);
+  assert.deepStrictEqual([g('Risparmi').budget, g('Risparmi').speso], [150, 0]);
+  assert.strictEqual(g('Necessarie').pctSpeso, 0.26); assert.strictEqual(g('Necessarie').pctPiano, 0.265);
+  assert.deepStrictEqual(r.gruppi.map(x => x.gruppo), ['Necessarie', 'Non necessarie', 'Risparmi']);
+});
+
+test('riepilogoGruppi: without a recorded salary it uses the plan salary of the month, without either the shares are 0', () => {
+  const cfg = cfgG(); cfg.piani = {'2026-02': {stipendio: 1800, righe: [{nome: 'Cena', importo: 180}]}};
+  const mesi = mesiG(); delete mesi['2026-02'].s;
+  const r = L.riepilogoGruppi(mesi, cfg, '2026-02');
+  assert.deepStrictEqual([r.stipendio, r.fonte], [1800, 'piano']);
+  assert.strictEqual(r.gruppi.find(x => x.gruppo === 'Non necessarie').budget, 180);
+  const n = L.riepilogoGruppi(mesi, cfgG(), '2026-02');
+  assert.deepStrictEqual([n.stipendio, n.fonte, n.gruppi[0].pctSpeso], [0, 'nessuno', 0]);
+});
+
+test('tassoRisparmio: PAC + buffer + couple trips over the salary against the minimum; planned-expense pots do not count', () => {
+  const r = L.tassoRisparmio(mesiG(), cfgG(), '2026-02');
+  assert.deepStrictEqual([r.pac, r.cuscinetto, r.viaggi, r.risparmio], [50, 100, 50, 200]);
+  assert.strictEqual(r.tasso, 0.1); assert.strictEqual(r.minimo, 10); assert.strictEqual(r.sopra, true); // Auto (30) is not savings
+  const cfg = cfgG(); cfg.risparmioMin = 12;
+  assert.strictEqual(L.tassoRisparmio(mesiG(), cfg, '2026-02').sopra, false);
+  assert.strictEqual(L.tassoRisparmio({}, cfgG(), '2026-02').tasso, null); // no salary
+});
+
+test('tassoRisparmio: a surplus put in the buffer by the month closing counts, one left on the account does not; withdrawals do not go below 0', () => {
+  const cfg = cfgG();
+  cfg.chiusure = {'2026-02': {righe: [{c: 'X', tipo: 'avanzo', importo: 60, a: 'Cuscinetto', coperto: 10}, {c: 'Y', tipo: 'avanzo', importo: 70, a: '', coperto: 0}]}};
+  assert.strictEqual(L.tassoRisparmio(mesiG(), cfg, '2026-02').cuscinetto, 150);
+  const mesi = mesiG(); mesi['2026-02'].w = {d: '2026-02-20', u: 90, k: 'Broker', a: 'Banca', t: 'g', ss: 'Inv'};
+  assert.strictEqual(L.tassoRisparmio(mesi, cfgG(), '2026-02').pac, 0);
+});
+
+test('validaConfig: magazzinoTCG as a number or a list of dated values; the savings minimum', () => {
+  const ok = Object.assign(cfgW(), {magazzinoTCG: [{d: '2026-02-10', importo: 80}], risparmioMin: 10});
+  assert.deepStrictEqual(L.validaConfig(ok), []);
+  assert.strictEqual(L.validaConfig(Object.assign(cfgW(), {magazzinoTCG: [{d: 'x', importo: 80}]})).length, 1);
+  assert.strictEqual(L.validaConfig(Object.assign(cfgW(), {risparmioMin: -3})).length, 1);
+});

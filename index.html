@@ -67,6 +67,10 @@ input[aria-invalid]{border-color:var(--over)}
 .hero{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:2px}
 .hero span{font-size:12px;color:var(--muted)}
 .hero b{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:34px;font-weight:600}
+.hero .pat{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline;gap:8px;color:var(--muted);font-size:12px;text-decoration:none}.hero .pat b{font-size:20px;color:var(--ink)}
+.hero .pat:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+.grafico{width:100%;height:auto;display:block}.grafico .linea{fill:none;stroke:var(--accent);stroke-width:2}.grafico .punto{fill:var(--accent)}.grafico .asse{stroke:var(--line)}.grafico text{fill:var(--muted);font-size:9px;font-family:var(--mono)}
+.delta.pos{color:var(--ok)}.delta.neg{color:var(--over)}
 .grande{display:block;text-align:center;text-decoration:none;font-size:18px;padding:16px}
 input[type=checkbox]{width:auto}
 label.chk{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--ink)}
@@ -161,6 +165,7 @@ details summary{cursor:pointer;font-weight:500}
       <a href="#registro">Registro</a>
       <a href="#categorie">Categorie</a>
       <a href="#conti">Conti</a>
+      <a href="#patrimonio">Patrimonio</a>
       <a href="#salvadanai">Salvadanai</a>
       <a href="#piano">Piano del mese</a>
       <a href="#chiusura">Chiusura del mese</a>
@@ -271,7 +276,7 @@ details summary{cursor:pointer;font-weight:500}
   </div>
 
   <div class="due" id="pagHome" hidden>
-    <div class="hero"><span>Spendibile questo mese</span><b id="sSpend">–</b><span id="sDet"></span></div>
+    <div class="hero"><span>Spendibile questo mese</span><b id="sSpend">–</b><span id="sDet"></span><a class="pat" href="#patrimonio"><span id="sPatL">Patrimonio</span><b id="sPat">–</b></a></div>
     <a class="btn pri grande" href="#registro">Nuovo movimento</a>
     <a class="stato err" id="cnAvviso" href="#conti" hidden></a>
     <a class="stato err" id="chAvviso" href="#chiusura" hidden></a>
@@ -293,6 +298,35 @@ details summary{cursor:pointer;font-weight:500}
       <div class="testa"><h2>Riepilogo</h2></div>
       <div id="chTot"></div>
       <div class="azioni"><button class="btn pri" id="chChiudi" type="button" hidden>Chiudi il mese</button><button class="btn" id="chRiapri" type="button" hidden>Riapri</button></div>
+    </section>
+    <section class="box">
+      <div class="testa"><h2>Per gruppo</h2><span class="stato" id="chGrStip"></span></div>
+      <div id="chGruppi" class="gruppo"></div>
+    </section>
+    <section class="box">
+      <div class="testa"><h2>Tasso di risparmio</h2></div>
+      <div id="chTasso" class="gruppo"></div>
+    </section>
+  </div>
+
+  <div class="due" id="pagPatrimonio" hidden>
+    <section class="box">
+      <div class="hero"><span>Patrimonio oggi</span><b id="ptTot">–</b><span id="ptNota"></span></div>
+      <div id="ptAvvisi"></div>
+    </section>
+    <section class="box">
+      <div class="testa"><h2>Componenti</h2></div>
+      <div id="ptComp" class="gruppo"></div>
+      <form id="tcgForm" autocomplete="off">
+        <p class="stato tutta">Magazzino TCG: il valore delle carte lo scrivi tu, con la data.</p>
+        <label><span>Data<b class="ob" aria-hidden="true">*</b></span><input id="tcgData" type="date" required></label>
+        <label><span>Valore del magazzino (€)<b class="ob" aria-hidden="true">*</b></span><input id="tcgValore" data-eur="zero" inputmode="decimal" placeholder="Es. 350"></label>
+        <div class="azioni tutta"><button class="btn pri" type="submit">Aggiorna il magazzino</button></div>
+      </form>
+    </section>
+    <section class="box">
+      <div class="testa"><h2>Andamento</h2><span class="stato" id="ptSerieNota"></span></div>
+      <div id="ptSerie"></div>
     </section>
   </div>
 
@@ -409,7 +443,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {chiusuraProposta, chiusuraCalcola, chiusuraStato, chiusuraMancante, saldoSalvadanaio, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota, saldi, differenzaControllo, ultimoControllo, storicoControlli, controlloScaduto, controlliInRitardo, sottosaldiConto, investimenti} = window.CSLogic;
+const {chiusuraProposta, chiusuraCalcola, chiusuraStato, chiusuraMancante, saldoSalvadanaio, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota, saldi, differenzaControllo, ultimoControllo, storicoControlli, controlloScaduto, controlliInRitardo, sottosaldiConto, investimenti, patrimonio, patrimonioSerie, riepilogoGruppi, tassoRisparmio} = window.CSLogic;
 const {validaImporto, validaQuotaJoint} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 
@@ -464,6 +498,8 @@ function render() {
   const {righe, senza, spendibile} = meseCalc(st.mesi, st.cfg, st.ym);
   $('sSpend').textContent = ok ? eur.format(spendibile) : '–';
   $('sSpend').style.color = spendibile < 0 ? 'var(--over)' : 'var(--ok)';
+  const pat = ok && st.cfg.conti.length ? patrimonio(st.mesi, st.cfg, todayISO()) : null; // the second number of the home (3.4)
+  $('sPat').textContent = pat ? eur.format(pat.totale) : '–'; $('sPatL').textContent = pat?.parziale ? 'Patrimonio (parziale)' : 'Patrimonio';
   const sum = (l, f) => l.reduce((t, r) => t + f(r), 0);
   $('sDet').textContent = ok ? `Budget ${eur.format(sum(righe, r => r.budget))} · speso ${eur.format(sum(righe, r => r.speso) + sum(senza, r => r.speso))}` : '';
 
@@ -514,7 +550,7 @@ function render() {
       : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
   $('etList').innerHTML = [...new Set([...etichette(st.mesi).map(r => r.l), ...(st.cfg.etichette || []).map(x => x?.nome).filter(Boolean)])].map(l => `<option value="${esc(l)}">`).join('');
-  renderForm(); renderCfg(); renderPiano(); renderPm(); renderConti(); renderChiusura();
+  renderForm(); renderCfg(); renderPiano(); renderPm(); renderConti(); renderChiusura(); renderPatrimonio();
 }
 
 // Form selects: active categories and accounts, plus the ones the movement being edited already has (archived or closed).
@@ -1164,6 +1200,7 @@ function renderChiusura() {
     + (r.scoperto > 0.005 ? `<p class="stato err">Sfori non coperti: ${eur.format(r.scoperto)}. Scegli un'altra fonte, oppure chiudi lasciandoli scoperti.</p>` : '')
     + r.errori.map(e => `<p class="stato err">${esc(e)}</p>`).join('')
     + (salvata ? '' : `<p class="stato">Scrivendo la chiusura: ${r.righe.length} voci, nessun movimento sul conto. I salvadanai indicati cambiano saldo da ${nomeMese(ym)} in poi.</p>`);
+  renderRiepilogo(ym);
   $('chChiudi').hidden = !!salvata || ym >= oggi; $('chRiapri').hidden = !(salvata && stato.puoRiaprire);
   if (salvata && !stato.puoRiaprire) $('chTot').innerHTML += `<p class="stato err">${esc(stato.motivo)}</p>`;
 }
@@ -1182,20 +1219,77 @@ $('chRiapri').addEventListener('click', () => {
   if (scriviCfg({chiusure: {[ym]: deleteField()}})) toast(`${nomeMese(ym)} riaperto`);
 });
 
+// Per-group summary and savings rate of the month shown by the closing page (3.4; logic.js riepilogoGruppi, tassoRisparmio).
+const pc = x => (x * 100).toLocaleString('it-IT', {maximumFractionDigits: 1}) + '%';
+function renderRiepilogo(ym) {
+  const g = riepilogoGruppi(st.mesi, st.cfg, ym), t = tassoRisparmio(st.mesi, st.cfg, ym);
+  $('chGrStip').textContent = g.fonte === 'nessuno' ? 'nessuno stipendio' : `stipendio ${eur.format(g.stipendio)} (${g.fonte === 'incassato' ? 'incassato nel mese' : 'dal piano'})`;
+  $('chGruppi').innerHTML = g.gruppi.length ? g.gruppi.map(x => `<div class="riga ${x.residuo < -0.005 ? 'over' : ''}"><span class="nome">${esc(x.gruppo || 'Senza gruppo')}</span><span class="res">${eur.format(x.speso)}</span>
+    <span class="det num">budget ${eur.format(x.budget)} · residuo ${eur.format(x.residuo)}${g.stipendio > 0 ? ` · speso ${pc(x.pctSpeso)} dello stipendio, piano ${pc(x.pctPiano)}` : ''}</span></div>`).join('')
+    + '<p class="stato">Il piano punta a circa 50% necessarie, 30% non necessarie, 20% risparmi e salvadanai. Speso = tua parte delle spese di quei budget e salvadanai.</p>'
+    : '<p class="vuoto">Nessun budget né salvadanaio da riepilogare.</p>';
+  $('chTasso').innerHTML = t.tasso === null ? '<p class="vuoto">Serve uno stipendio (incassato o nel piano del mese) per calcolare il tasso.</p>'
+    : `<div class="riga ${t.sopra ? 'ok' : 'over'}"><span class="nome">Tasso di risparmio</span><span class="res">${pc(t.tasso)}</span>
+      <span class="det num">${t.sopra ? 'sopra' : 'sotto'} il minimo della guida (${t.minimo}%) · PAC ${eur.format(t.pac)} + Cuscinetto ${eur.format(t.cuscinetto)} + Viaggi di coppia ${eur.format(t.viaggi)} = ${eur.format(t.risparmio)}</span></div>
+      <p class="stato">I salvadanai per spese programmate non contano come risparmio.</p>`;
+}
+
+// Net worth page (3.4): today's figure with its components, the TCG stock typed by hand, and the end-of-month series.
+function renderPatrimonio() {
+  if ($('pagPatrimonio').hidden) return;
+  if (!ready()) { $('ptComp').innerHTML = '<p class="vuoto">Carico i dati…</p>'; return; }
+  const oggi = todayISO(), p = patrimonio(st.mesi, st.cfg, oggi), inv = st.cfg.investimenti && investimenti(st.mesi, st.cfg, oggi);
+  $('ptTot').textContent = eur.format(p.totale);
+  $('ptNota').textContent = p.crediti > 0 ? `Crediti aperti ${eur.format(p.crediti)}: soldi che altri ti devono, non sono nel patrimonio` : '';
+  $('ptAvvisi').innerHTML = (p.senzaSaldo.length ? `<p class="stato err">Senza saldo iniziale: ${p.senzaSaldo.map(esc).join(', ')}. Il saldo conta solo i movimenti registrati, quindi il patrimonio è parziale (Configurazione, Saldo iniziale).</p>` : '')
+    + (p.senzaQuota ? '<p class="stato err">Manca la quota del Joint in vigore: il Joint conta zero. Impostala in Configurazione.</p>' : '');
+  const det = c => c.tipo === 'investimenti' ? (inv?.valore != null ? `valore del ${dataIt(inv.data)}, versato ${eur.format(inv.versato)}` : `nessun valore inserito: conta il versato ${eur.format(inv?.versato || 0)}`)
+    : c.tipo === 'tcg' ? 'valore scritto a mano' : c.quota != null ? `saldo del conto ${eur.format(c.saldo)} · tua quota ${c.quota}%` : c.saldo !== c.importo ? `saldo ${eur.format(c.saldo)}, meno la parte investita (contata a valore)` : '';
+  $('ptComp').innerHTML = p.componenti.map(c => `<div class="riga"><span class="nome">${esc(c.nome)}</span><span class="res">${eur.format(c.importo)}</span>${det(c) ? `<span class="det">${det(c)}</span>` : ''}</div>`).join('')
+    + `<div class="riga totale"><span class="nome">Totale</span><span class="res">${eur.format(p.totale)}</span></div>
+    <p class="stato">I salvadanai e il fondo emergenze sono già dentro i conti: non si sommano di nuovo. Un giroconto tra conti non cambia il totale.</p>`;
+  if (!$('tcgData').value) $('tcgData').value = oggi;
+  const serie = patrimonioSerie(st.mesi, st.cfg, oggi), ultimi = serie.slice(-24);
+  $('ptSerieNota').textContent = serie.some(x => x.parziale) ? '* parziale: manca il saldo iniziale di un conto' : '';
+  $('ptSerie').innerHTML = !serie.length ? '<p class="vuoto">Serve almeno un movimento per disegnare l\'andamento.</p>' : grafico(ultimi)
+    + `<div class="gruppo">${ultimi.slice().reverse().slice(0, 12).map(x => `<div class="riga"><span class="nome">${nomeMese(x.ym)}${x.parziale ? ' *' : ''}</span><span class="res">${eur.format(x.totale)}</span>
+      ${x.delta === null ? '' : `<span class="det delta ${x.delta > 0 ? 'pos' : x.delta < 0 ? 'neg' : ''}">${sgn(x.delta)} sul mese prima</span>`}</div>`).join('')}</div>`;
+}
+// Small SVG line of the series (no dependency); the table under it carries the same figures for screen readers.
+function grafico(s) {
+  const W = 320, H = 110, L = 6, R = 6, T = 10, B = 18, v = s.map(x => x.totale), mn = Math.min(...v), mx = Math.max(...v), sp = mx - mn || 1;
+  const x = i => L + (s.length < 2 ? (W - L - R) / 2 : i * (W - L - R) / (s.length - 1)), y = n => T + (H - T - B) * (1 - (n - mn) / sp);
+  const pts = s.map((q, i) => `${x(i).toFixed(1)},${y(q.totale).toFixed(1)}`).join(' ');
+  return `<svg class="grafico" viewBox="0 0 ${W} ${H}" role="img" aria-label="Andamento del patrimonio: da ${eur.format(v[0])} a ${eur.format(v[v.length - 1])} in ${s.length} mesi. I dati sono nella tabella qui sotto.">
+    <line class="asse" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/>
+    ${s.length > 1 ? `<polyline class="linea" points="${pts}"/>` : ''}${s.map((q, i) => `<circle class="punto" cx="${x(i).toFixed(1)}" cy="${y(q.totale).toFixed(1)}" r="2.5"/>`).join('')}
+    <text x="${L}" y="${H - 4}">${s[0].ym}</text><text x="${W - R}" y="${H - 4}" text-anchor="end">${s[s.length - 1].ym}</text></svg>`;
+}
+$('tcgForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const d = $('tcgData').value, v = leggi($('tcgValore'));
+  if (!d) { toast('Scegli la data del valore'); $('tcgData').focus(); return; }
+  if (v === null) { $('tcgValore').focus(); return; }
+  if ($('tcgValore').value.trim() === '') { errCampo($('tcgValore'), 'Scrivi il valore (anche 0)'); $('tcgValore').focus(); return; }
+  const lista = Array.isArray(st.cfg.magazzinoTCG) ? st.cfg.magazzinoTCG : []; // a bare number from an old import is replaced by the dated list
+  if (scriviCfg({magazzinoTCG: [...lista.filter(x => x.d !== d), {d, importo: v}]})) { toast('Magazzino aggiornato'); $('tcgValore').value = ''; }
+});
+
 // Side menu: the page is the URL hash, so the phone back button works
 $('menuApri').addEventListener('click', () => $('menu').showModal());
 $('menu').addEventListener('click', ev => { if (ev.target === $('menu') || ev.target.closest('a,#menuChiudi')) $('menu').close(); });
 function pagina() {
-  const titoli = {'#categorie': 'Categorie', '#salvadanai': 'Salvadanai', '#piano': 'Piano del mese', '#permettermelo': 'Posso permettermelo?', '#config': 'Configurazione', '#registro': 'Registro', '#conti': 'Conti', '#chiusura': 'Chiusura del mese'};
+  const titoli = {'#categorie': 'Categorie', '#salvadanai': 'Salvadanai', '#piano': 'Piano del mese', '#permettermelo': 'Posso permettermelo?', '#config': 'Configurazione', '#registro': 'Registro', '#conti': 'Conti', '#chiusura': 'Chiusura del mese', '#patrimonio': 'Patrimonio'};
   const p = titoli[location.hash] ? location.hash : ''; // any other hash is the home
-  $('pagCategorie').hidden = p !== '#categorie'; $('pagConfig').hidden = p !== '#config'; $('pagSalvadanai').hidden = p !== '#salvadanai'; $('pagPiano').hidden = p !== '#piano'; $('pagPermettermelo').hidden = p !== '#permettermelo'; $('pagConti').hidden = p !== '#conti'; $('pagChiusura').hidden = p !== '#chiusura';
-  $('mese').hidden = p === '#categorie' || p === '#config' || p === '#salvadanai' || p === '#conti' || p === '#chiusura';
+  $('pagCategorie').hidden = p !== '#categorie'; $('pagConfig').hidden = p !== '#config'; $('pagSalvadanai').hidden = p !== '#salvadanai'; $('pagPiano').hidden = p !== '#piano'; $('pagPermettermelo').hidden = p !== '#permettermelo'; $('pagConti').hidden = p !== '#conti'; $('pagChiusura').hidden = p !== '#chiusura'; $('pagPatrimonio').hidden = p !== '#patrimonio';
+  $('mese').hidden = p === '#categorie' || p === '#config' || p === '#salvadanai' || p === '#conti' || p === '#chiusura' || p === '#patrimonio';
   $('pagHome').hidden = !!p; $('pagRegistro').hidden = p !== '#registro';
   $('titolo').textContent = titoli[p] || 'Conto Spese';
   if (p === '#piano') { st.pnYm = null; renderPiano(); } // reopen: pick up budgets and pots changed meanwhile (an unsaved draft is dropped)
   if (p === '#permettermelo') renderPm();
   if (p === '#conti') renderConti();
   if (p === '#chiusura') renderChiusura();
+  if (p === '#patrimonio') renderPatrimonio();
   for (const a of $('menu').querySelectorAll('a')) a.hash === p ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
 }
 addEventListener('hashchange', pagina); pagina();
