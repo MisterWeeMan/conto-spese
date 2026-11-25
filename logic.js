@@ -36,6 +36,14 @@
     return best ? best.pct : null;
   }
 
+  // {p, q} to store on a new expense on the Joint account: q = share in force on m.d, p = u x q to the cent;
+  // u stays whole. null when nothing applies. shortcut: Joint = account whose name contains 'joint', the
+  // config has no flag for it yet; revisit when the new cfg.conti is wired (1.7).
+  function quotaMov(cfg, m) {
+    var q = m.u > 0 && !m.t && /joint/i.test(m.k || '') ? quotaJoint(cfg, m.d) : null;
+    return q == null ? null : {p: Math.round(m.u * q) / 100, q: q};
+  }
+
   // Accounts that accept new movements. shortcut: reads the new cfg.conti ({nome, chiuso}); the stored
   // config is still a list of strings until the migration.
   function contiAttivi(cfg) { return (cfg.conti || []).filter(function (c) { return !c.chiuso; }); }
@@ -104,7 +112,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, quotaJoint: quotaJoint, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, calcola: calcola, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, quotaJoint: quotaJoint, quotaMov: quotaMov, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, calcola: calcola, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

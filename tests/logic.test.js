@@ -140,3 +140,18 @@ test('calcola leaves a transfer out of every total, even with a category by mist
   assert.ok(r.righe[0].speso === 0); // === so that -0 passes
   assert.deepStrictEqual(r.senza, []);
 });
+
+test('quotaMov: a Joint expense keeps u whole and gets p and q from the share in force on its date', () => {
+  const cfg = {quotaJoint: [{da: '2025-01-01', pct: 56}, {da: '2027-01-01', pct: 50}]};
+  assert.deepStrictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 100, k: 'Revolut Joint'}), {p: 56, q: 56});
+  assert.deepStrictEqual(L.quotaMov(cfg, {d: '2027-03-01', u: 100, k: 'Revolut Joint'}), {p: 50, q: 50});
+  assert.deepStrictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 33.33, k: 'Joint'}), {p: 18.66, q: 56}); // rounded to the cent
+});
+
+test('quotaMov: nothing to apply for other accounts, income, transfers or no share in force', () => {
+  const cfg = {quotaJoint: [{da: '2025-01-01', pct: 56}]};
+  assert.strictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 100, k: 'Revolut'}), null);
+  assert.strictEqual(L.quotaMov(cfg, {d: '2026-03-01', e: 100, k: 'Joint'}), null);
+  assert.strictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 100, k: 'Joint', t: 'g', a: 'Revolut'}), null);
+  assert.strictEqual(L.quotaMov(cfg, {d: '2024-03-01', u: 100, k: 'Joint'}), null);
+});
