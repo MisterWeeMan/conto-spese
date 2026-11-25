@@ -494,3 +494,53 @@ test('permettermelo: no bucket available, and the category itself is never propo
   assert.deepStrictEqual(s.proposte, []);
   assert.strictEqual(s.scoperto, 20);
 });
+
+// Extra income (x2): where it goes (b) and the pot balance it feeds. Invented data.
+const svX = (nome, importo, obiettivo) => ({nome, conto: 'A', saldoIniziale: {data: '2027-01-01', importo}, quota: 0, ...(obiettivo ? {obiettivo} : {})});
+const cfgX = {salvadanai: [svX('Fondo emergenze', 800, 1000), svX('Fondo TCG', 0), svX('Auto', 150, 400), svX('Viaggi', 90, 300), svX('Investimenti', 0)]};
+
+test('saldoSalvadanaio: an extra income assigned to the pot (b) raises its balance, one assigned elsewhere does not', () => {
+  const mesi = {'2027-02': {
+    a: {d: '2027-02-03', e: 60, t: 'x2', b: 'Auto'},
+    b: {d: '2027-02-04', e: 40, t: 'x2', b: 'Viaggi'},
+    c: {d: '2027-02-05', e: 25, t: 'x2', b: 'Auto', x: 1},   // deleted
+    d: {d: '2026-12-20', e: 99, t: 'x2', b: 'Auto'},        // before the opening date: already in the opening balance
+  }};
+  assert.strictEqual(L.saldoSalvadanaio(mesi, cfgX.salvadanai[2], '2027-02'), 210);
+  assert.strictEqual(L.saldoSalvadanaio(mesi, cfgX.salvadanai[2], '2027-01'), 150); // not yet received
+});
+
+test('destinazioneExtra: below the threshold it goes to the buffer, whatever else is short', () => {
+  assert.deepStrictEqual(L.destinazioneExtra({}, cfgX, {d: '2027-02-03', e: 99.99}).b, 'Cuscinetto');
+});
+
+test('destinazioneExtra: from the threshold up, the emergency fund first if below its goal', () => {
+  const r = L.destinazioneExtra({}, cfgX, {d: '2027-02-03', e: 100});
+  assert.strictEqual(r.b, 'Fondo emergenze');
+  assert.ok(r.motivo);
+});
+
+test('destinazioneExtra: emergency fund full -> the pot furthest below its goal, then investments, then the buffer', () => {
+  const pieno = {salvadanai: cfgX.salvadanai.map(v => v.nome === 'Fondo emergenze' ? svX(v.nome, 1000, 1000) : v)};
+  assert.strictEqual(L.destinazioneExtra({}, pieno, {d: '2027-02-03', e: 200}).b, 'Auto'); // short 250 vs Viaggi 210
+  const senzaObiettivi = {salvadanai: [svX('Auto', 150), svX('Investimenti', 0)]};
+  assert.strictEqual(L.destinazioneExtra({}, senzaObiettivi, {d: '2027-02-03', e: 200}).b, 'Investimenti');
+  assert.strictEqual(L.destinazioneExtra({}, {salvadanai: [svX('Auto', 150)]}, {d: '2027-02-03', e: 200}).b, 'Cuscinetto');
+  assert.strictEqual(L.destinazioneExtra({}, {}, {d: '2027-02-03', e: 200}).b, 'Cuscinetto');
+});
+
+test('destinazioneExtra: the balance used is the one at the movement month, extra income already received counts', () => {
+  const mesi = {'2027-01': {a: {d: '2027-01-10', e: 300, t: 'x2', b: 'Fondo emergenze'}}}; // 800 + 300 >= 1000
+  assert.strictEqual(L.destinazioneExtra(mesi, cfgX, {d: '2027-02-03', e: 150}).b, 'Auto');
+});
+
+test('destinazioneExtra: a card sale (label TCG) always goes to the TCG fund, even below the threshold', () => {
+  assert.strictEqual(L.destinazioneExtra({}, cfgX, {d: '2027-02-03', e: 30, l: ['tcg']}).b, 'Fondo TCG');
+  assert.strictEqual(L.destinazioneExtra({}, {salvadanai: []}, {d: '2027-02-03', e: 30, l: ['TCG']}).b, 'Cuscinetto'); // no fund configured
+});
+
+test('destinazioneExtra: threshold and names can be set in cfg.extra', () => {
+  const cfg = {...cfgX, extra: {soglia: 20, cuscinetto: 'Riserva'}};
+  assert.strictEqual(L.destinazioneExtra({}, cfg, {d: '2027-02-03', e: 19}).b, 'Riserva');
+  assert.strictEqual(L.destinazioneExtra({}, cfg, {d: '2027-02-03', e: 20}).b, 'Fondo emergenze');
+});

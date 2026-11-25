@@ -36,12 +36,13 @@ Regole: un movimento sul Joint ha `u` intero e `p = u × q`. Una spesa divisa co
 ### `spese_config/main`
 
 - `categorie`: lista di `{nome, gruppo, budget, joint, taglio, archiviata}`. `budget` è **mensile** (oggi il campo `budget` è annuale e sparisce). `joint` = la spesa passa dal Joint alla quota. `taglio` = priorità di taglio (solo non necessarie).
-- `salvadanai`: lista di `{nome, gruppo, conto, voci: [{nome, annuale, data, cicli?, cambio?}], quota?, saldoIniziale: {data, importo}, sottosaldo?}`. La quota mensile è la somma delle voci o, senza voci, il valore fisso `quota`. Voce: `data` = mese di scadenza `YYYY-MM`; `cicli` = mesi del ciclo (assente = 12); `cambio` = `{da: 'YYYY-MM', quota}`: dal mese `da` la quota della voce è quel valore fisso, al posto di quella calcolata. Il saldo resta uno solo: `v` sul movimento è solo un'etichetta.
+- `salvadanai`: lista di `{nome, gruppo, conto, voci: [{nome, annuale, data, cicli?, cambio?}], quota?, saldoIniziale: {data, importo}, obiettivo?, sottosaldo?}`. `obiettivo` (opzionale, euro): sotto questo saldo il salvadanaio è "in ammanco" (e, per il fondo emergenze, "toccato") nel suggerimento delle entrate extra. Il saldo include le entrate extra con `b` = nome del salvadanaio. La quota mensile è la somma delle voci o, senza voci, il valore fisso `quota`. Voce: `data` = mese di scadenza `YYYY-MM`; `cicli` = mesi del ciclo (assente = 12); `cambio` = `{da: 'YYYY-MM', quota}`: dal mese `da` la quota della voce è quel valore fisso, al posto di quella calcolata. Il saldo resta uno solo: `v` sul movimento è solo un'etichetta.
 - `conti`: lista di `{nome, joint, chiuso, sottosaldi?}`. `joint` = conto comune: le spese su di esso hanno `u` intero con `p` e `q` calcolati dalla quota, e solo su di esso va il versamento della compagna. Un conto chiuso resta nei saldi storici e non accetta movimenti nuovi.
 - `quotaJoint`: lista di `{da, pct}`; vale quella con `da` più recente non successiva alla data del movimento.
 - `soglie`: `[80, 100]`.
 - `etichette`: lista di `{nome, categoria?}`, solo suggerimenti per il campo Etichette (la categoria o il salvadanaio a cui appartengono; senza `categoria` = trasversale, come TCG). Le etichette dei movimenti restano in `l` e compaiono comunque.
 - `obiettivi`: lista di `{nome, attuale, desiderato}` (investimenti, rata auto). Nessuna regola automatica.
+- `extra`: opzionale, `{soglia: 100, cuscinetto, emergenze, investimenti, tcg}`: soglia e nomi usati dal suggerimento delle entrate extra (default: 100, "Cuscinetto", "Fondo emergenze", "Investimenti", "Fondo TCG").
 - `fondoEmergenze`: `{conto, sottosaldo, obiettivo}`.
 - `investimenti`: `{versato, valore}`, `valore` aggiornato a mano.
 - `magazzinoTCG`: valore delle carte, a mano.

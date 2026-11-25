@@ -253,9 +253,36 @@
     }
     Object.keys(mesi).forEach(function (k) {
       if (k > ym) return;
-      movs(mesi, k).forEach(function (m) { if (m.c === sv.nome && m.d >= si.data) tot -= m.u ? mia(m) : -mia(m); });
+      movs(mesi, k).forEach(function (m) {
+        if (m.d < si.data) return;
+        if (m.t === 'x2') { if (m.b === sv.nome) tot += m.e || 0; } // extra income assigned to this pot
+        else if (m.c === sv.nome) tot -= m.u ? mia(m) : -mia(m);
+      });
     });
     return Math.round(tot * 100) / 100;
+  }
+
+  // Suggested destination (b) of an extra income m {d, e, l?}: {b, motivo}. It only proposes, the user chooses. Names and threshold
+  // come from cfg.extra {soglia: 100, cuscinetto, emergenze, investimenti, tcg}. Card sales (label TCG) go to the TCG fund; below
+  // the threshold the buffer; from it up: the emergency fund if below its sv.obiettivo, the pot furthest below its obiettivo,
+  // the investments pot, the buffer. Pots are skipped when missing from cfg.salvadanai.
+  // shortcut: "in ammanco" = balance under the optional sv.obiettivo of the pot (the plan has no other "expected" figure),
+  // and "touched" = emergency fund under its obiettivo; the buffer is only a name (not a pot), so its residual does not grow.
+  // Upgrade when 2.7 brings fondoEmergenze and the cycle goals.
+  function destinazioneExtra(mesi, cfg, m) {
+    var x = Object.assign({soglia: 100, cuscinetto: 'Cuscinetto', emergenze: 'Fondo emergenze', investimenti: 'Investimenti', tcg: 'Fondo TCG'}, cfg.extra);
+    var pots = cfg.salvadanai || [], ym = m.d.slice(0, 7);
+    var ha = function (n) { return pots.some(function (v) { return v.nome === n; }); };
+    var manca = function (v) { return v.obiettivo > 0 ? v.obiettivo - saldoSalvadanaio(mesi, v, ym) : 0; };
+    if ((m.l || []).some(function (l) { return String(l).toLowerCase() === 'tcg'; }) && ha(x.tcg)) return {b: x.tcg, motivo: 'Vendita di carte: va al fondo TCG'};
+    if (m.e < x.soglia) return {b: x.cuscinetto, motivo: 'Sotto ' + x.soglia + ' €: nel cuscinetto'};
+    var em = pots.find(function (v) { return v.nome === x.emergenze; });
+    if (em && manca(em) > 0.005) return {b: em.nome, motivo: 'Il fondo emergenze è sotto il suo obiettivo'};
+    var corto = pots.filter(function (v) { return v.nome !== x.emergenze && manca(v) > 0.005; })
+      .sort(function (a, b) { return manca(b) - manca(a); })[0];
+    if (corto) return {b: corto.nome, motivo: 'Salvadanaio in ammanco rispetto al suo obiettivo'};
+    if (ha(x.investimenti)) return {b: x.investimenti, motivo: 'Niente da rimettere a posto: livello 3-5 anni'};
+    return {b: x.cuscinetto, motivo: 'Nessun altro posto: nel cuscinetto'};
   }
 
   // What a new or edited expense m cannot take from its pot: the deepest shortfall of the balance from m's month to the
@@ -342,7 +369,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();
