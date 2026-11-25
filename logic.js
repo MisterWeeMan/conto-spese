@@ -224,6 +224,30 @@
     return s;
   }
 
+  // "Replace the 2026" import (3.5): file = {'2026-MM': {mov: {id: row}}} replaces every 2026 month present now (rows, tombstones and test data).
+  // -> {errori, cancella: {mesi, mov}, importa: {mesi, mov}, scritture: {ym: mov}}. scritture is what to write, whole documents: a 2026 month
+  // that is not in the file gets {} (emptied); other years are never listed. cancella counts live movements only. The file is checked first.
+  function sostituisci2026(mesi, file) {
+    var errori = [], importa = {mesi: 0, mov: 0}, cancella = {mesi: 0, mov: 0}, scritture = {}, num = function (x) { return x === undefined || (typeof x === 'number' && isFinite(x) && x >= 0); };
+    Object.keys(file || {}).forEach(function (ym) {
+      var mov = file[ym] && file[ym].mov;
+      if (!/^2026-(0[1-9]|1[0-2])$/.test(ym)) { errori.push('Il mese ' + ym + ' non è del 2026'); return; }
+      if (!mov || typeof mov !== 'object') { errori.push('Il mese ' + ym + ' non ha movimenti'); return; }
+      Object.keys(mov).forEach(function (id) {
+        var r = mov[id];
+        if (!r || typeof r.d !== 'string' || r.d.slice(0, 7) !== ym || !num(r.e) || !num(r.u)) errori.push('Movimento ' + id + ' del ' + ym + ' non valido');
+      });
+      scritture[ym] = mov; importa.mesi++; importa.mov += Object.keys(mov).length;
+    });
+    if (!importa.mesi && !errori.length) errori.push('Il file non ha movimenti del 2026');
+    if (errori.length) return {errori: errori.slice(0, 5).concat(errori.length > 5 ? ['(+' + (errori.length - 5) + ')'] : []), cancella: cancella, importa: importa, scritture: {}};
+    Object.keys(mesi).filter(function (ym) { return /^2026-/.test(ym); }).forEach(function (ym) {
+      cancella.mesi++; cancella.mov += movs(mesi, ym).length;
+      if (!scritture[ym]) scritture[ym] = {};
+    });
+    return {errori: errori, cancella: cancella, importa: importa, scritture: scritture};
+  }
+
   // Bank check (spec 'controlli'): difference = bank balance - tool balance; ok within a cent. No correcting movement is
   // ever created: the difference only says a movement is probably missing.
   function differenzaControllo(banca, strumento) {
@@ -744,7 +768,7 @@
     return {stipendio: s.stipendio, pac: p, cuscinetto: cus, viaggi: via, risparmio: tot, tasso: s.stipendio > 0 ? tot / s.stipendio : null, minimo: minimo, sopra: s.stipendio > 0 && tot * 100 >= minimo * s.stipendio};
   }
 
-  var api = {patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, magazzinoTCG: magazzinoTCG, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, sottosaldo: sottosaldo, sottosaldiConto: sottosaldiConto, investimenti: investimenti, valoreInvestimenti: valoreInvestimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {sostituisci2026: sostituisci2026, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, magazzinoTCG: magazzinoTCG, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, sottosaldo: sottosaldo, sottosaldiConto: sottosaldiConto, investimenti: investimenti, valoreInvestimenti: valoreInvestimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

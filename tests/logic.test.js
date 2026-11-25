@@ -1080,3 +1080,25 @@ test('validaConfig: magazzinoTCG as a number or a list of dated values; the savi
   assert.strictEqual(L.validaConfig(Object.assign(cfgW(), {magazzinoTCG: [{d: 'x', importo: 80}]})).length, 1);
   assert.strictEqual(L.validaConfig(Object.assign(cfgW(), {risparmioMin: -3})).length, 1);
 });
+
+test('sostituisci2026: replaces the 2026 months, counts what goes and what comes, leaves 2027 alone', () => {
+  const mesi = {'2026-01': {a: {d: '2026-01-05', u: 10}, b: {d: '2026-01-06', u: 5, x: 1}}, '2026-02': {c: {d: '2026-02-01', u: 3}}, '2027-01': {z: {d: '2027-01-02', u: 9}}};
+  const file = {'2026-02': {mov: {n1: {d: '2026-02-03', u: 4}, n2: {d: '2026-02-04', e: 8}}}, '2026-03': {mov: {n3: {d: '2026-03-01', u: 1}}}};
+  const r = L.sostituisci2026(mesi, file);
+  assert.deepStrictEqual(r.errori, []);
+  assert.deepStrictEqual(r.cancella, {mesi: 2, mov: 2});   // the tombstone does not count
+  assert.deepStrictEqual(r.importa, {mesi: 2, mov: 3});
+  assert.deepStrictEqual(Object.keys(r.scritture).sort(), ['2026-01', '2026-02', '2026-03']); // 2026-01 is emptied, 2027 is never written
+  assert.deepStrictEqual(r.scritture['2026-01'], {});
+  assert.deepStrictEqual(Object.keys(r.scritture['2026-02']), ['n1', 'n2']);
+});
+
+test('sostituisci2026 refuses a file that is not only 2026 or has broken rows', () => {
+  const f = (ym, row) => L.sostituisci2026({}, {[ym]: {mov: {a: row}}}).errori.length;
+  assert.ok(f('2027-01', {d: '2027-01-02', u: 1}));          // not a 2026 month
+  assert.ok(f('2026-01', {d: '2026-02-02', u: 1}));          // date outside its month
+  assert.ok(f('2026-01', {d: '2026-01-02', u: -1}));         // negative amount
+  assert.ok(f('2026-01', {d: '2026-01-02', u: 'x'}));        // not a number
+  assert.ok(L.sostituisci2026({}, {}).errori.length);        // empty file
+  assert.strictEqual(f('2026-01', {d: '2026-01-02', e: 5, u: 0}), 0);
+});

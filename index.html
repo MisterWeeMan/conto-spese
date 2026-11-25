@@ -374,6 +374,15 @@ details summary{cursor:pointer;font-weight:500}
       <p class="stato">Carica un file JSON con <code>mesi</code> (movimenti) e/o <code>config</code> (configurazione), come <code>dati/import-2026.json</code> o <code>dati/config-2027.json</code>. I movimenti già presenti con lo stesso identificativo vengono sovrascritti, gli altri restano. Una configurazione nuova sostituisce le liste di categorie, conti e salvadanai, la quota Joint, le soglie e i piani dei mesi nel file. Il file viene controllato prima di scrivere: se non va, vedi il motivo.</p>
       <input id="importa" type="file" accept=".json,application/json" aria-label="File da importare">
     </section>
+    <section class="box" id="sostBox">
+      <h2>Sostituisci il 2026</h2>
+      <p class="stato">Per la migrazione dal foglio. <b>Cancella tutti i movimenti del 2026 già presenti</b> (anche quelli di prova) e li sostituisce con quelli del file, per esempio <code>dati/import-2026-nuovo.json</code>. Non tocca i mesi 2027 né la configurazione. Prima di scrivere vedi quanti movimenti spariscono e quanti arrivano, e devi confermare. Non c'è un annulla: i dati restano solo nel foglio e nel file.</p>
+      <input id="sostituisci" type="file" accept=".json,application/json" aria-label="File con i movimenti del 2026">
+      <div id="sostPanel" hidden>
+        <p class="stato" id="sostTesto" role="status"></p>
+        <div class="azioni"><button class="btn peric" id="sostOk" type="button">Cancella e sostituisci il 2026</button><button class="btn" id="sostNo" type="button">Annulla</button></div>
+      </div>
+    </section>
   </div>
 
   <div class="pag" id="pagRegistro">
@@ -820,7 +829,7 @@ $('importa').addEventListener('change', async ev => {
   try {
     const j = JSON.parse(await f.text());
     if (!j || (typeof j.mesi !== 'object' && typeof j.config !== 'object')) throw new Error('formato non riconosciuto');
-    const mesi = Object.entries(j.mesi || {}).filter(([ym, m]) => /^d{4}-d{2}$/.test(ym) && m && typeof m.mov === 'object');
+    const mesi = Object.entries(j.mesi || {}).filter(([ym, m]) => /^\d{4}-\d{2}$/.test(ym) && m && typeof m.mov === 'object');
     const n = mesi.reduce((t, [, m]) => t + Object.keys(m.mov).length, 0), cfg = j.config && cfgImport(j.config);
     const prob = cfg ? validaConfig(cfgNorm(j.config)) : [];
     if (prob.length) throw new Error(prob.slice(0, 3).join('; ') + (prob.length > 3 ? ` (+${prob.length - 3})` : ''));
@@ -833,6 +842,42 @@ $('importa').addEventListener('change', async ev => {
     }
   } catch (err) { toast('Importazione non riuscita: ' + (err?.message || err)); }
   ev.target.value = '';
+});
+
+// "Replace the 2026" (3.5): the plan comes from logic.js sostituisci2026; whole month documents are written in ONE batch (no merge: tombstones and
+// test rows go too), 2027 and the config are never touched. Nothing is written until the second, explicit click.
+let sost = null, sostMesi = null;
+const sostTesto = p => `Verranno CANCELLATI ${p.cancella.mov} movimenti in ${p.cancella.mesi} mesi del 2026 e IMPORTATI ${p.importa.mov} movimenti in ${p.importa.mesi} mesi. Il 2027 e la configurazione non cambiano.`;
+const sostChiudi = () => { sost = sostMesi = null; $('sostPanel').hidden = true; $('sostituisci').value = ''; };
+$('sostituisci').addEventListener('change', async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  try {
+    if (!st.uid || !ready()) throw new Error('il database non è ancora pronto');
+    const j = JSON.parse(await f.text());
+    if (!j || typeof j.mesi !== 'object') throw new Error('formato non riconosciuto');
+    const p = window.CSLogic.sostituisci2026(st.mesi, j.mesi);
+    if (p.errori.length) throw new Error(p.errori.join('; '));
+    sost = p; sostMesi = j.mesi;
+    $('sostTesto').textContent = sostTesto(p);
+    $('sostPanel').hidden = false;
+  } catch (err) { sostChiudi(); toast('File non accettato: ' + (err?.message || err)); }
+});
+$('sostNo').addEventListener('click', sostChiudi);
+$('sostOk').addEventListener('click', async () => {
+  if (!sost || !ready()) return;
+  // the database may have changed since the file was picked: recompute, and if the numbers moved show them and ask again
+  const piano = window.CSLogic.sostituisci2026(st.mesi, sostMesi), b = $('sostOk');
+  if (piano.cancella.mov !== sost.cancella.mov || piano.cancella.mesi !== sost.cancella.mesi) { sost = piano; $('sostTesto').textContent = sostTesto(piano); toast('I dati sono cambiati: controlla i numeri e conferma di nuovo'); return; }
+  b.disabled = true;
+  try {
+    const batch = writeBatch(db);
+    Object.entries(piano.scritture).forEach(([ym, mov]) => batch.set(refMese(ym), {mov}));
+    toast('Sostituisco il 2026…');
+    await batch.commit();
+    toast(`2026 sostituito: ${piano.importa.mov} movimenti in ${piano.importa.mesi} mesi`);
+    sostChiudi();
+  } catch (err) { errore(err); }
+  b.disabled = false;
 });
 
 // Categories page
