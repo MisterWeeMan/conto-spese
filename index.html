@@ -238,7 +238,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta} = window.CSLogic;
+const {parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta, soglieSuperate} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 const calcola = ym => window.CSLogic.calcola(st.mesi, st.cfg, ym);
 
@@ -311,7 +311,7 @@ function renderImp() {
 }
 
 function ricorda(k, v) { try { if (v === undefined) return localStorage.getItem('cs.' + k); localStorage.setItem('cs.' + k, v); } catch { return null; } }
-let tT; function toast(msg) { $('toast').textContent = msg; $('toast').hidden = false; clearTimeout(tT); tT = setTimeout(() => $('toast').hidden = true, 2600); }
+let tT; function toast(msg, ms = 2600) { $('toast').textContent = msg; $('toast').hidden = false; clearTimeout(tT); tT = setTimeout(() => $('toast').hidden = true, ms); }
 const errore = e => toast('Non salvato: ' + (e?.code === 'permission-denied' ? 'accesso negato dal database' : e?.message || e?.code || 'errore sconosciuto'));
 
 function setEdit(m) {
@@ -347,10 +347,14 @@ $('form').addEventListener('submit', async ev => {
   const ym = m.d.slice(0, 7), id = st.edit?.id || 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   $('salva').disabled = true;
   try {
+    // the warning is computed on a copy before the write: it never changes what is written
+    const dopo = {...st.mesi, [ym]: {...st.mesi[ym], [id]: {...st.mesi[ym]?.[id], ...m}}};
+    const avvisi = m.u && m.c ? soglieSuperate(st.mesi, dopo, st.cfg, ym).filter(a => a.c === m.c) : [];
     scrivi(ym, id, m);
     if (st.edit && st.edit.ym !== ym) scrivi(st.edit.ym, id, {x: 1});
     ricorda('conto', m.k);
-    toast(st.edit ? 'Modifiche salvate' : `Aggiunto: ${eur.format(net(m))}${m.c ? ' · ' + m.c : ''}`);
+    toast((st.edit ? 'Modifiche salvate' : `Aggiunto: ${eur.format(net(m))}${m.c ? ' · ' + m.c : ''}`) +
+      avvisi.map(a => ` — Attenzione: ${a.c} al ${Math.round(a.pct * 100)}% del budget (soglia ${a.soglia}%)`).join(''), avvisi.length ? 6000 : 2600);
     if (ym !== st.ym) st.ym = ym;
     setEdit(null); render(); $('importo').focus();
   } catch (err) { errore(err); }

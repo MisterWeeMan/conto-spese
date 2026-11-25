@@ -147,6 +147,21 @@
     return {righe: righe, senza: senza, spendibile: Math.round(spendibile * 100) / 100};
   }
 
+  // Thresholds newly crossed in month ym between two states of mesi (spec rule 5): [{c, soglia, pct}], one per category,
+  // the highest crossed (70% -> 110% gives only 100). cfg.soglie in percent, default [80, 100]; reaching a threshold counts.
+  function soglieSuperate(prima, dopo, cfg, ym) {
+    var soglie = (cfg.soglie || [80, 100]).slice().sort(function (a, b) { return b - a; });
+    var prev = {};
+    meseCalc(prima, cfg, ym).righe.forEach(function (r) { prev[r.c] = r; });
+    var out = [];
+    meseCalc(dopo, cfg, ym).righe.forEach(function (r) {
+      var oltre = function (x, s) { return x.speso * 100 >= s * x.budget; };
+      var s = soglie.find(function (s) { return oltre(r, s); });
+      if (s !== undefined && !oltre(prev[r.c], s)) out.push({c: r.c, soglia: s, pct: r.pct});
+    });
+    return out;
+  }
+
   // Every category: configured, with a budget, or used by a live movement.
   // n = live movements using it, anno = those in the given year ('YYYY').
   function categorie(mesi, cfg, anno) {
@@ -175,7 +190,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, calcola: calcola, meseCalc: meseCalc, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, calcola: calcola, meseCalc: meseCalc, soglieSuperate: soglieSuperate, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

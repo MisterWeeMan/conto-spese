@@ -271,3 +271,28 @@ test('meseCalc: an old-style income with a category lowers its speso', () => {
   const r = L.meseCalc({'2027-03': {a: {d: '2027-03-01', u: 30, c: 'Svago'}, b: {d: '2027-03-02', e: 10, c: 'Svago'}}}, cfgMese, '2027-03');
   assert.strictEqual(r.righe[1].speso, 20);
 });
+
+// soglieSuperate: thresholds newly crossed by a movement (made-up data, budget 100)
+const cfgSoglie = {categorie: [{nome: 'Svago', gruppo: 'Extra', budget: 100}, {nome: 'Libero', gruppo: 'Extra'}]};
+const mm = (u, c) => ({'2027-03': {a: {d: '2027-03-01', u, c: c || 'Svago'}}});
+const sup = (prima, dopo, cfg) => L.soglieSuperate(prima, dopo, cfg || cfgSoglie, '2027-03');
+
+test('soglieSuperate: 79% to 81% warns 80; already past 80 stays quiet', () => {
+  assert.deepStrictEqual(sup(mm(79), mm(81)), [{c: 'Svago', soglia: 80, pct: 0.81}]);
+  assert.deepStrictEqual(sup(mm(81), mm(85)), []);
+});
+
+test('soglieSuperate: reaching a threshold counts; 70% to 110% gives only the highest', () => {
+  assert.deepStrictEqual(sup(mm(95), mm(100)), [{c: 'Svago', soglia: 100, pct: 1}]);
+  assert.deepStrictEqual(sup(mm(70), mm(110)), [{c: 'Svago', soglia: 100, pct: 1.1}]);
+});
+
+test('soglieSuperate: no budget, no warning; cfg.soglie overrides the default', () => {
+  assert.deepStrictEqual(sup(mm(0, 'Libero'), mm(500, 'Libero')), []);
+  assert.deepStrictEqual(sup(mm(40), mm(60), {...cfgSoglie, soglie: [50]}), [{c: 'Svago', soglia: 50, pct: 0.6}]);
+});
+
+test('soglieSuperate: an edit is before vs after of the same id; a lower amount never warns', () => {
+  assert.deepStrictEqual(sup(mm(90), mm(70)), []);
+  assert.deepStrictEqual(sup(mm(50), mm(85)), [{c: 'Svago', soglia: 80, pct: 0.85}]);
+});
