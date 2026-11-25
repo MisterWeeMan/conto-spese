@@ -245,6 +245,7 @@ details summary{cursor:pointer;font-weight:500}
   <div class="due" id="pagHome" hidden>
     <div class="hero"><span>Spendibile questo mese</span><b id="sSpend">–</b><span id="sDet"></span></div>
     <a class="btn pri grande" href="#registro">Nuovo movimento</a>
+    <section class="box" id="fondoBox" hidden></section>
     <section class="box">
       <div class="testa"><h2>Categorie del mese</h2><span class="stato">residuo = budget del mese − speso, nessun riporto</span></div>
       <div id="budget"><p class="vuoto">Qui compare quanto resta da spendere per ogni categoria.</p></div>
@@ -334,7 +335,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {saldoSalvadanaio, quotaSalvadanaio, ammanco, parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, creditiAperti, meseCalc, piano, pianoPrecedente} = window.CSLogic;
+const {saldoSalvadanaio, quotaSalvadanaio, ammanco, parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, creditiAperti, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 
 const st = {mesi: {}, cfg: cfgNorm({}), ym: todayISO().slice(0, 7), edit: null, catEdit: null, catInfo: [], q: '', pronto: false, cfgPronto: false};
@@ -349,6 +350,17 @@ function rigaBudget(r) {
     <span class="det num">speso ${eur.format(r.speso)} di ${eur.format(r.budget)} · ${Math.round(r.pct * 100)}%</span></div>`;
 }
 
+// Emergency fund box of the home (B7): months covered, goal, a warning when a use has to be put back, and the January/July check.
+function fondoHtml() {
+  const f = fondoEmergenze(st.mesi, st.cfg, st.ym);
+  if (!f) return '';
+  const mesi = f.mesi.toLocaleString('it-IT', {maximumFractionDigits: 1});
+  return `<div class="testa"><h2>Fondo emergenze</h2><span class="stato${f.sotto ? ' err' : ''}">${mesi} mesi di necessarie coperti</span></div>
+    <div class="riga"><span class="nome">Saldo</span><span class="res">${eur.format(f.saldo)}${f.obiettivo ? ' su ' + eur.format(f.obiettivo) : ''}</span></div>
+    ${f.sotto && f.obiettivo ? `<p class="vuoto" style="color:var(--over)">Sotto l'obiettivo di ${eur.format(f.manca)}: il reintegro viene prima di tutto.</p>` : ''}
+    ${f.promemoria ? `<p class="vuoto">Promemoria di gennaio e luglio: controlla gli interessi e il confronto con 6 mesi di necessarie. ${f.obiettivo ? `Obiettivo ${eur.format(f.obiettivo)} contro ${eur.format(f.seiMesi)} (6 × ${eur.format(f.necessarie)}): ${f.obiettivo >= f.seiMesi ? "l'obiettivo copre 6 mesi" : "l'obiettivo è sotto i 6 mesi"}.` : `6 mesi di necessarie sono ${eur.format(f.seiMesi)}: imposta un obiettivo.`}</p>` : ''}`;
+}
+
 function render() {
   const [Y, M] = st.ym.split('-').map(Number);
   const nome = new Date(Y, M - 1, 1).toLocaleDateString('it-IT', {month: 'long', year: 'numeric'});
@@ -361,6 +373,7 @@ function render() {
   $('sDet').textContent = ok ? `Budget ${eur.format(sum(righe, r => r.budget))} · speso ${eur.format(sum(righe, r => r.speso) + sum(senza, r => r.speso))}` : '';
 
   if (ok) {
+    $('fondoBox').innerHTML = fondoHtml(); $('fondoBox').hidden = !$('fondoBox').innerHTML;
     let h = '';
     if (righe.length) h += `<div class="gruppo">${righe.sort((a, b) => a.c.localeCompare(b.c, 'it')).map(rigaBudget).join('')}</div>`;
     if (senza.length) h += `<div class="gruppo"><h3>Senza budget, movimenti del mese</h3>${senza.map(r => `<div class="riga"><span class="nome">${esc(r.c)}</span><span class="res">${eur.format(r.speso)}</span></div>`).join('')}</div>`;
@@ -536,6 +549,7 @@ $('form').addEventListener('submit', async ev => {
   const ym = m.d.slice(0, 7), id = st.edit?.id || 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   // shortcut: a pot never goes below zero, so an expense above its balance is refused and the user splits it by hand
   // (the part the pot covers on its name, the rest on another envelope); a picker for the covering envelope can come later.
+  if (usoFondoSenzaNota(st.cfg, m)) return fail('Ogni uso del fondo emergenze richiede una nota: scrivi il motivo', 'nota');
   const manca = ammanco(st.mesi, st.cfg, {...m, id});
   if (manca > 0) return fail(`Il salvadanaio ${c} non basta: mancano ${eur.format(manca)}. Dividi la spesa: la parte che ci sta qui, il resto su un'altra categoria`, 'importo');
   $('salva').disabled = true;

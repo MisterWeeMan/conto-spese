@@ -544,3 +544,52 @@ test('destinazioneExtra: threshold and names can be set in cfg.extra', () => {
   assert.strictEqual(L.destinazioneExtra({}, cfg, {d: '2027-02-03', e: 19}).b, 'Riserva');
   assert.strictEqual(L.destinazioneExtra({}, cfg, {d: '2027-02-03', e: 20}).b, 'Fondo emergenze');
 });
+
+// Emergency fund (B7): months covered, below-goal flag, January/July reminder, note rule. Invented data.
+const cfgFE = {
+  categorie: [{nome: 'Affitto', gruppo: 'Necessarie', budget: 500}, {nome: 'Spesa', gruppo: 'Necessarie', budget: 200}, {nome: 'Svago', gruppo: 'Non necessarie', budget: 100}],
+  salvadanai: [
+    {nome: 'Fondo emergenze', gruppo: 'Risparmi', conto: 'TR', saldoIniziale: {data: '2027-01-01', importo: 3000}, quota: 0},
+    {nome: 'Auto', gruppo: 'Necessarie', conto: 'Rev', saldoIniziale: {data: '2027-01-01', importo: 0}, quota: 100},
+  ],
+  fondoEmergenze: {conto: 'TR', sottosaldo: 'Fondo emergenze', obiettivo: 6000},
+};
+test('fondoEmergenze: months covered = balance / monthly necessarie (budgets + pot quotas of that group, not the fund itself)', () => {
+  const f = L.fondoEmergenze({}, cfgFE, '2027-02'); // necessarie = 500 + 200 + 100 = 800
+  assert.strictEqual(f.saldo, 3000);
+  assert.strictEqual(f.necessarie, 800);
+  assert.strictEqual(f.mesi, 3.75);
+  assert.strictEqual(f.seiMesi, 4800);
+  assert.strictEqual(f.manca, 3000);
+  assert.strictEqual(f.sotto, true);
+});
+test('fondoEmergenze: a withdrawal lowers the balance, a full fund is not below goal, null without config', () => {
+  const mesi = {'2027-02': {a: {d: '2027-02-10', u: 500, c: 'Fondo emergenze', n: 'Dentista'}}};
+  assert.strictEqual(L.fondoEmergenze(mesi, cfgFE, '2027-02').saldo, 2500);
+  const pieno = {...cfgFE, fondoEmergenze: {...cfgFE.fondoEmergenze, obiettivo: 3000}};
+  assert.strictEqual(L.fondoEmergenze({}, pieno, '2027-02').sotto, false);
+  assert.strictEqual(L.fondoEmergenze({}, {categorie: []}, '2027-02'), null);
+  assert.strictEqual(L.fondoEmergenze({}, {...cfgFE, salvadanai: []}, '2027-02'), null); // no pot with that name
+});
+test('fondoEmergenze: reminder only in January and July', () => {
+  const p = m => L.fondoEmergenze({}, cfgFE, '2027-' + m).promemoria;
+  assert.deepStrictEqual(['01', '02', '06', '07', '12'].map(p), [true, false, false, true, false]);
+});
+test('usoFondo: a plain expense from the fund needs a note, other rows do not', () => {
+  const fe = cfgFE;
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {c: 'Fondo emergenze', u: 50, n: ''}), true);
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {c: 'Fondo emergenze', u: 50, n: '  '}), true);
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {c: 'Fondo emergenze', u: 50, n: 'Dentista'}), false);
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {c: 'Svago', u: 50, n: ''}), false);
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {c: 'Fondo emergenze', e: 50, t: 'x2', n: ''}), false); // income into the fund is not a use
+});
+test('destinazioneExtra: the emergency fund goal can come from cfg.fondoEmergenze', () => {
+  const cfg = {salvadanai: [svX('Fondo emergenze', 800), svX('Investimenti', 0)], fondoEmergenze: {sottosaldo: 'Fondo emergenze', obiettivo: 1000}};
+  assert.strictEqual(L.destinazioneExtra({}, cfg, {d: '2027-02-03', e: 300}).b, 'Fondo emergenze');
+});
+test('validaConfig: fondoEmergenze must name an existing pot and have a valid goal', () => {
+  const ok = {...cfgFE, conti: [{nome: 'TR'}, {nome: 'Rev'}]};
+  assert.deepStrictEqual(L.validaConfig(ok), []);
+  assert.strictEqual(L.validaConfig({...ok, fondoEmergenze: {sottosaldo: 'Nope', obiettivo: 10}}).length, 1);
+  assert.strictEqual(L.validaConfig({...ok, fondoEmergenze: {sottosaldo: 'Fondo emergenze', obiettivo: -5}}).length, 1);
+});

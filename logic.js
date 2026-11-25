@@ -118,6 +118,9 @@
         if (x.cambio && !(ym.test(x.cambio.da || '') && num(x.cambio.quota))) err.push('Voce ' + x.nome + ' cambio is not valid');
       });
     });
+    var fe = c.fondoEmergenze;
+    if (fe && !(c.salvadanai || []).some(function (v) { return v.nome === fe.sottosaldo; })) err.push('fondoEmergenze: pot ' + fe.sottosaldo + ' does not exist');
+    if (fe && fe.obiettivo != null && !(num(fe.obiettivo) && fe.obiettivo >= 0)) err.push('fondoEmergenze: goal is not valid');
     (c.quotaJoint || []).forEach(function (q) { if (!day.test(q.da || '') || !real(q.da) || !(q.pct > 0 && q.pct <= 100)) err.push('quotaJoint entry ' + q.da + ' is not valid'); });
     (c.soglie || []).forEach(function (s) { if (!(s > 0)) err.push('soglie value ' + s + ' is not valid'); });
     var cat = (c.categorie || []).map(function (x) { return x.nome; });
@@ -268,21 +271,47 @@
   // the investments pot, the buffer. Pots are skipped when missing from cfg.salvadanai.
   // shortcut: "in ammanco" = balance under the optional sv.obiettivo of the pot (the plan has no other "expected" figure),
   // and "touched" = emergency fund under its obiettivo; the buffer is only a name (not a pot), so its residual does not grow.
-  // Upgrade when 2.7 brings fondoEmergenze and the cycle goals.
   function destinazioneExtra(mesi, cfg, m) {
     var x = Object.assign({soglia: 100, cuscinetto: 'Cuscinetto', emergenze: 'Fondo emergenze', investimenti: 'Investimenti', tcg: 'Fondo TCG'}, cfg.extra);
     var pots = cfg.salvadanai || [], ym = m.d.slice(0, 7);
     var ha = function (n) { return pots.some(function (v) { return v.nome === n; }); };
-    var manca = function (v) { return v.obiettivo > 0 ? v.obiettivo - saldoSalvadanaio(mesi, v, ym) : 0; };
+    var fe = cfg.fondoEmergenze || {}; // the fund goal set in 2.7 wins over the pot's own obiettivo
+    var manca = function (v) { var o = v.nome === fe.sottosaldo && fe.obiettivo > 0 ? fe.obiettivo : v.obiettivo; return o > 0 ? o - saldoSalvadanaio(mesi, v, ym) : 0; };
     if ((m.l || []).some(function (l) { return String(l).toLowerCase() === 'tcg'; }) && ha(x.tcg)) return {b: x.tcg, motivo: 'Vendita di carte: va al fondo TCG'};
     if (m.e < x.soglia) return {b: x.cuscinetto, motivo: 'Sotto ' + x.soglia + ' €: nel cuscinetto'};
-    var em = pots.find(function (v) { return v.nome === x.emergenze; });
+    var em = pots.find(function (v) { return v.nome === (fe.sottosaldo || x.emergenze); });
     if (em && manca(em) > 0.005) return {b: em.nome, motivo: 'Il fondo emergenze è sotto il suo obiettivo'};
-    var corto = pots.filter(function (v) { return v.nome !== x.emergenze && manca(v) > 0.005; })
+    var corto = pots.filter(function (v) { return (!em || v.nome !== em.nome) && manca(v) > 0.005; })
       .sort(function (a, b) { return manca(b) - manca(a); })[0];
     if (corto) return {b: corto.nome, motivo: 'Salvadanaio in ammanco rispetto al suo obiettivo'};
     if (ha(x.investimenti)) return {b: x.investimenti, motivo: 'Niente da rimettere a posto: livello 3-5 anni'};
     return {b: x.cuscinetto, motivo: 'Nessun altro posto: nel cuscinetto'};
+  }
+
+  // Emergency fund (spec rule 15, B7) at the end of month ym. cfg.fondoEmergenze = {conto, sottosaldo, obiettivo}: sottosaldo is the
+  // name of the pot that holds the fund (its balance comes from saldoSalvadanaio: opening balance + movements with c = name +
+  // extra income assigned to it), so it stays out of the spendibile like every pot. necessarie = monthly budgets of the
+  // Necessarie categories + quotas of the Necessarie pots, the fund itself excluded (as the plan counts them). mesi = saldo /
+  // necessarie (2 decimals, 0 without necessarie); seiMesi = 6 x necessarie, the check of the January/July reminder; sotto = balance
+  // under the goal (a use must be put back first). null when the config or the pot is missing.
+  // shortcut: the goal is a fixed number, not tied to seiMesi; the check is only shown in January and July (no push notification).
+  function fondoEmergenze(mesi, cfg, ym) {
+    var fe = cfg.fondoEmergenze, r2 = function (x) { return Math.round(x * 100) / 100; };
+    var sv = fe && (cfg.salvadanai || []).find(function (v) { return v.nome === fe.sottosaldo; });
+    if (!sv) return null;
+    var nec = 0;
+    (cfg.categorie || []).forEach(function (c) { if (!c.archiviata && c.gruppo === 'Necessarie' && c.budget > 0) nec += c.budget; });
+    (cfg.salvadanai || []).forEach(function (v) { if (v !== sv && v.gruppo === 'Necessarie') nec += quotaSalvadanaio(v, ym); });
+    nec = r2(nec);
+    var saldo = saldoSalvadanaio(mesi, sv, ym), ob = fe.obiettivo || 0;
+    return {saldo: saldo, obiettivo: ob, necessarie: nec, mesi: nec > 0 ? r2(saldo / nec) : 0, seiMesi: r2(6 * nec),
+      manca: r2(Math.max(0, ob - saldo)), sotto: saldo < ob, promemoria: ym.slice(5) === '01' || ym.slice(5) === '07'};
+  }
+
+  // True when m is a plain expense from the emergency fund pot without a note (every use needs one, spec rule 15).
+  function usoFondoSenzaNota(cfg, m) {
+    var fe = cfg.fondoEmergenze;
+    return !!fe && m.c === fe.sottosaldo && m.u > 0 && !m.t && !String(m.n || '').trim();
   }
 
   // What a new or edited expense m cannot take from its pot: the deepest shortfall of the balance from m's month to the
@@ -369,7 +398,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();
