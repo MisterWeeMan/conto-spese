@@ -44,12 +44,25 @@
   // not the same as categorie() below, which still reads the old list of strings.
   function categorieAttive(cfg) { return (cfg.categorie || []).filter(function (c) { return !c.archiviata; }); }
 
+  // Balance per account over all months. A transfer (t:'g') moves u from k to a; every other row moves k by e - u,
+  // so the old two-row transfer still reads right. shortcut: no opening balances, rows without k count under ''.
+  function saldi(mesi) {
+    var s = {};
+    function add(k, v) { s[k || ''] = Math.round(((s[k || ''] || 0) + v) * 100) / 100; }
+    Object.keys(mesi).forEach(function (ym) {
+      movs(mesi, ym).forEach(function (m) {
+        if (m.t === 'g') { add(m.k, -(m.u || 0)); add(m.a, m.u || 0); } else add(m.k, net(m));
+      });
+    });
+    return s;
+  }
+
   // Same rule as the sheet's Budget tab: what was not spent (or overspent) in the
   // previous months of the year carries over. residuo = annual/12 * month + net YTD.
   function calcola(mesi, cfg, ym) {
     var Y = +ym.slice(0, 4), M = +ym.slice(5, 7), ytd = {}, mese = {}, ent = 0, usc = 0;
     for (var i = 1; i <= M; i++) movs(mesi, Y + '-' + pad(i)).forEach(function (m) {
-      if (!m.c) return; // no category = transfer between accounts, left out of totals as in the sheet
+      if (!m.c || m.t === 'g') return; // no category (old two-row transfer) or t:'g' = transfer, left out of totals
       ytd[m.c] = (ytd[m.c] || 0) + net(m);
       if (i === M) { mese[m.c] = (mese[m.c] || 0) + net(m); ent += m.e || 0; usc += m.u || 0; }
     });
@@ -91,7 +104,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, quotaJoint: quotaJoint, contiAttivi: contiAttivi, categorieAttive: categorieAttive, calcola: calcola, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, quotaJoint: quotaJoint, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, calcola: calcola, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

@@ -114,3 +114,29 @@ test('categorieAttive leaves out archived categories and keeps the group', () =>
   assert.deepStrictEqual(L.categorieAttive(cfg), [{nome: 'Spesa', gruppo: 'Necessarie'}]);
   assert.deepStrictEqual(L.categorieAttive({}), []);
 });
+
+test('saldi: a one-row transfer moves only the two account balances', () => {
+  const mesi = {'2026-03': {
+    a: {d: '2026-03-01', e: 1000, c: 'Stipendio', k: 'Banca'},
+    b: {d: '2026-03-02', u: 30, c: 'Spesa', k: 'Banca'},
+    g: {d: '2026-03-03', u: 200, k: 'Banca', a: 'Cassa', t: 'g'}
+  }};
+  assert.deepStrictEqual(L.saldi(mesi), {Banca: 770, Cassa: 200});
+});
+
+test('saldi: the old two-row transfer reads as before; deleted rows are ignored', () => {
+  const mesi = {'2026-03': {
+    o: {d: '2026-03-03', u: 50, k: 'Banca'},
+    i: {d: '2026-03-03', e: 50, k: 'Cassa'},
+    x: {d: '2026-03-04', u: 99, k: 'Cassa', x: 1}
+  }};
+  assert.deepStrictEqual(L.saldi(mesi), {Banca: -50, Cassa: 50});
+});
+
+test('calcola leaves a transfer out of every total, even with a category by mistake', () => {
+  const mesi = {'2026-03': {g: {d: '2026-03-03', u: 200, k: 'Banca', a: 'Cassa', t: 'g', c: 'Spesa'}}};
+  const r = L.calcola(mesi, {budget: {Spesa: 120}}, '2026-03');
+  assert.strictEqual(r.usc, 0);
+  assert.ok(r.righe[0].speso === 0); // === so that -0 passes
+  assert.deepStrictEqual(r.senza, []);
+});
