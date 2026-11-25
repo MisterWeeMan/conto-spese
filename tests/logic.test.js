@@ -198,9 +198,46 @@ test('meseCalc: empty month', () => {
   assert.deepStrictEqual(r.senza, []);
 });
 
-test('meseCalc: an old-style income with a category lowers its speso', () => {
-  const r = L.meseCalc({'2027-03': {a: {d: '2027-03-01', u: 30, c: 'Svago'}, b: {d: '2027-03-02', e: 10, c: 'Svago'}}}, cfgMese, '2027-03');
-  assert.strictEqual(r.righe[1].speso, 20);
+test('meseCalc: an income never lowers the speso of a category, whatever its category', () => {
+  const r = L.meseCalc({'2027-03': {a: {d: '2027-03-01', u: 30, c: 'Svago'}, b: {d: '2027-03-02', e: 10, c: 'Svago'}, c: {d: '2027-03-03', e: 900, c: 'Stipendio'}}}, cfgMese, '2027-03');
+  assert.strictEqual(r.righe[1].speso, 30);
+  assert.deepStrictEqual(r.senza, []); // an income category is not a spent category
+});
+
+// Income categories (R3): cfg.categorie entries with entrata: true; only the one with finanzia: true funds the month.
+const cfgEntr = {categorie: [...cfgMese.categorie,
+  {nome: 'Stipendio', entrata: true, finanzia: true}, {nome: 'Tredicesima', entrata: true}, {nome: 'Vendita carte', entrata: true}, {nome: 'Vecchia entrata', entrata: true, archiviata: true}]};
+
+test('finanziaMese: only an income in a funding category is month; legacy x2, other income and expenses are not', () => {
+  assert.strictEqual(L.finanziaMese(cfgEntr, {e: 1500, c: 'Stipendio'}), true);
+  assert.strictEqual(L.finanziaMese(cfgEntr, {e: 900, c: 'Tredicesima'}), false);
+  assert.strictEqual(L.finanziaMese(cfgEntr, {e: 500, c: 'Stipendio', t: 'x2'}), false); // legacy extra income
+  assert.strictEqual(L.finanziaMese(cfgEntr, {e: 50}), false);                           // no category
+  assert.strictEqual(L.finanziaMese(cfgEntr, {u: 50, c: 'Stipendio'}), false);           // an expense
+});
+
+test('meseCalc: stipendio is the sum of the incomes in funding categories, nothing else touches the month', () => {
+  const mesi = {'2027-03': {
+    a: {d: '2027-03-01', e: 1500, c: 'Stipendio'}, b: {d: '2027-03-02', e: 200, c: 'Stipendio'},
+    c: {d: '2027-03-03', e: 900, c: 'Tredicesima'}, d: {d: '2027-03-04', e: 40, c: 'Vendita carte'},
+    e: {d: '2027-03-05', e: 500, c: 'Svago', t: 'x2', b: 'Auto'}, f: {d: '2027-03-06', e: 99, c: 'Stipendio', x: 1}}};
+  const r = L.meseCalc(mesi, cfgEntr, '2027-03');
+  assert.strictEqual(r.stipendio, 1700);
+  assert.strictEqual(r.spendibile, 150);   // identical to a month with no income at all
+  assert.strictEqual(L.meseCalc({}, cfgEntr, '2027-03').stipendio, 0);
+});
+
+test('categorieAttive leaves out income categories; categorieEntrata lists the active ones', () => {
+  assert.deepStrictEqual(L.categorieAttive(cfgEntr).map(c => c.nome), ['Affitto', 'Svago', 'TCG']);
+  assert.deepStrictEqual(L.categorieEntrata(cfgEntr).map(c => c.nome), ['Stipendio', 'Tredicesima', 'Vendita carte']);
+});
+
+test('validaConfig: income categories have no budget, priority or group; finanzia only on an income category', () => {
+  const ok = {categorie: [{nome: 'Stipendio', entrata: true, finanzia: true}, {nome: 'Rimborsi', entrata: true}, {nome: 'Svago', gruppo: 'Non necessarie', budget: 50}]};
+  assert.deepStrictEqual(L.validaConfig(ok), []);
+  assert.strictEqual(L.validaConfig({categorie: [{nome: 'Rimborsi', entrata: true, budget: 20}]}).length, 1);
+  assert.strictEqual(L.validaConfig({categorie: [{nome: 'Rimborsi', entrata: true, taglio: 3}]}).length, 1);
+  assert.strictEqual(L.validaConfig({categorie: [{nome: 'Svago', budget: 50, finanzia: true}]}).length, 1);
 });
 
 // soglieSuperate: thresholds newly crossed by a movement (made-up data, budget 100)
@@ -653,4 +690,22 @@ test('riordinaTaglio: archived categories neither collide nor shift', () => {
 });
 test('riordinaTaglio: legacy duplicates are separated', () => {
   assert.deepStrictEqual(L.riordinaTaglio(cs(['A', 2], ['B', 2], ['C']), 'C', 2), {C: 2, A: 3, B: 4});
+});
+
+test('saldoSalvadanaio: an income with a destination (b) feeds the pot with or without the legacy x2; an income never lowers it', () => {
+  const sv = cfgX.salvadanai[2]; // Auto, 150 from 2027-01-01
+  const mesi = {'2027-02': {
+    a: {d: '2027-02-03', e: 60, c: 'Tredicesima', b: 'Auto'},            // new: plain income with a destination
+    b: {d: '2027-02-04', e: 40, c: 'Svago', t: 'x2', b: 'Auto'},         // legacy
+    c: {d: '2027-02-05', e: 25, c: 'Auto'},                             // income named like the pot, no destination: not a refund any more
+    d: {d: '2027-02-06', e: 30, c: 'Tredicesima', b: 'Viaggi'},          // elsewhere
+  }};
+  assert.strictEqual(L.saldoSalvadanaio(mesi, sv, '2027-02'), 250);
+});
+
+test('destinazioneExtra: an income in the category Vendita carte goes to the TCG fund (name from cfg.extra.carte)', () => {
+  assert.strictEqual(L.destinazioneExtra({}, cfgX, {d: '2027-02-03', e: 30, c: 'Vendita carte'}).b, 'Fondo TCG');
+  const altro = {...cfgX, extra: {carte: 'Incassi TCG'}};
+  assert.strictEqual(L.destinazioneExtra({}, altro, {d: '2027-02-03', e: 30, c: 'Incassi TCG'}).b, 'Fondo TCG');
+  assert.strictEqual(L.destinazioneExtra({}, altro, {d: '2027-02-03', e: 30, c: 'Vendita carte'}).b, 'Cuscinetto');
 });

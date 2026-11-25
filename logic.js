@@ -41,7 +41,7 @@
   function net(m) { return (m.e || 0) - (m.u || 0); }
 
   // My part of a movement: p if set, else u (e for income). Transfers (g), partner top-ups (vj)
-  // credits (cr), refunds (rb) and extra income (x2) are not mine.
+  // credits (cr), refunds (rb) and legacy extra income (x2) are not mine.
   function mia(m) {
     if (m.t === 'g' || m.t === 'vj' || m.t === 'cr' || m.t === 'rb' || m.t === 'x2') return 0;
     return m.p != null ? m.p : (m.u || m.e || 0);
@@ -129,6 +129,8 @@
     (c.categorie || []).forEach(function (x) {
       if (x.gruppo && gruppi.indexOf(x.gruppo) < 0) err.push('Group ' + x.gruppo + ' of ' + x.nome + ' is unknown');
       if (x.budget != null && !(num(x.budget) && x.budget >= 0)) err.push('Budget ' + x.budget + ' of ' + x.nome + ' is not valid');
+      if (x.entrata && (x.budget > 0 || x.taglio > 0 || x.gruppo)) err.push('Income category ' + x.nome + ' has no budget, priority or group');
+      if (x.finanzia && !x.entrata) err.push('Category ' + x.nome + ' funds the month but is not an income category');
     });
     var conti = (c.conti || []).map(function (x) { return x.nome; });
     (c.salvadanai || []).forEach(function (v) {
@@ -161,7 +163,17 @@
   function contiAttivi(cfg) { return (cfg.conti || []).filter(function (c) { return !c.chiuso; }); }
 
   // Categories open to new movements, with their gruppo (cfg.categorie = [{nome, gruppo, ...}], see cfgNorm).
-  function categorieAttive(cfg) { return (cfg.categorie || []).filter(function (c) { return !c.archiviata; }); }
+  function categorieAttive(cfg) { return (cfg.categorie || []).filter(function (c) { return !c.archiviata && !c.entrata; }); }
+
+  // Income categories open to new movements (entrata: true); the one with finanzia: true is the salary that funds the month.
+  function categorieEntrata(cfg) { return (cfg.categorie || []).filter(function (c) { return !c.archiviata && c.entrata; }); }
+
+  // True when m is an income in a category that funds the month. Any other income (other income categories, no category, the
+  // legacy t:'x2') never touches the month. Archived categories still count: old salaries stay salaries.
+  function finanziaMese(cfg, m) {
+    if (!(m.e > 0) || m.u || m.t) return false;
+    return (cfg.categorie || []).some(function (c) { return c.nome === m.c && c.entrata && c.finanzia; });
+  }
 
   // Balance per account over all months. A transfer (t:'g') moves u from k to a; every other row moves k by e - u,
   // so the old two-row transfer still reads right. shortcut: no opening balances, rows without k count under ''.
@@ -181,13 +193,14 @@
   // not archived; senza: other categories used in the month; spendibile: sum of the residuals (overspent counts negative).
   // shortcut: duplicate category names are not checked, the Joint flag is unused (budget = my share, as in strategia-2027),
   // overspent budgets are not clamped; revisit if the spec says otherwise.
-  // An income row with a category lowers its speso (old-style refund); extra income never reaches here (mia = 0).
+  // Only expenses count as speso: an income never lowers it (R3). stipendio = incomes of the month in funding categories
+  // (finanziaMese), informational: the spendibile stays the sum of the residuals, no income of any kind enters it.
   function meseCalc(mesi, cfg, ym) {
-    var speso = {};
+    var speso = {}, stipendio = 0;
     movs(mesi, ym).forEach(function (m) {
-      if (!m.c) return;
-      var v = m.u ? mia(m) : -mia(m);
-      speso[m.c] = Math.round(((speso[m.c] || 0) + v) * 100) / 100;
+      if (finanziaMese(cfg, m)) stipendio += m.e;
+      if (!m.c || !m.u) return;
+      speso[m.c] = Math.round(((speso[m.c] || 0) + mia(m)) * 100) / 100;
     });
     var righe = [], spendibile = 0, conBudget = {};
     (cfg.salvadanai || []).forEach(function (v) { conBudget[v.nome] = 1; }); // a pot is not a budget: kept out of senza
@@ -199,7 +212,7 @@
     });
     var senza = Object.keys(speso).filter(function (c) { return !conBudget[c] && speso[c]; })
       .map(function (c) { return {c: c, speso: speso[c]}; }).sort(function (a, b) { return b.speso - a.speso; });
-    return {righe: righe, senza: senza, spendibile: Math.round(spendibile * 100) / 100};
+    return {righe: righe, senza: senza, spendibile: Math.round(spendibile * 100) / 100, stipendio: Math.round(stipendio * 100) / 100};
   }
 
   // Thresholds newly crossed in month ym between two states of mesi (spec rule 5): [{c, soglia, pct}], one per category,
@@ -280,26 +293,26 @@
       if (k > ym) return;
       movs(mesi, k).forEach(function (m) {
         if (m.d < si.data) return;
-        if (m.t === 'x2') { if (m.b === sv.nome) tot += m.e || 0; } // extra income assigned to this pot
-        else if (m.c === sv.nome) tot -= m.u ? mia(m) : -mia(m);
+        if (m.b && m.e && !m.u && (!m.t || m.t === 'x2')) { if (m.b === sv.nome) tot += m.e; } // income assigned to this pot (x2 = legacy)
+        else if (m.c === sv.nome && m.u) tot -= mia(m);
       });
     });
     return Math.round(tot * 100) / 100;
   }
 
   // Suggested destination (b) of an extra income m {d, e, l?}: {b, motivo}. It only proposes, the user chooses. Names and threshold
-  // come from cfg.extra {soglia: 100, cuscinetto, emergenze, investimenti, tcg}. Card sales (label TCG) go to the TCG fund; below
+  // come from cfg.extra {soglia: 100, carte, cuscinetto, emergenze, investimenti, tcg}. Card sales (label TCG or category cfg.extra.carte, default 'Vendita carte') go to the TCG fund; below
   // the threshold the buffer; from it up: the emergency fund if below its sv.obiettivo, the pot furthest below its obiettivo,
   // the investments pot, the buffer. Pots are skipped when missing from cfg.salvadanai.
   // shortcut: "in ammanco" = balance under the optional sv.obiettivo of the pot (the plan has no other "expected" figure),
   // and "touched" = emergency fund under its obiettivo; the buffer is only a name (not a pot), so its residual does not grow.
   function destinazioneExtra(mesi, cfg, m) {
-    var x = Object.assign({soglia: 100, cuscinetto: 'Cuscinetto', emergenze: 'Fondo emergenze', investimenti: 'Investimenti', tcg: 'Fondo TCG'}, cfg.extra);
+    var x = Object.assign({soglia: 100, cuscinetto: 'Cuscinetto', emergenze: 'Fondo emergenze', investimenti: 'Investimenti', tcg: 'Fondo TCG', carte: 'Vendita carte'}, cfg.extra);
     var pots = cfg.salvadanai || [], ym = m.d.slice(0, 7);
     var ha = function (n) { return pots.some(function (v) { return v.nome === n; }); };
     var fe = cfg.fondoEmergenze || {}; // the fund goal set in 2.7 wins over the pot's own obiettivo
     var manca = function (v) { var o = v.nome === fe.sottosaldo && fe.obiettivo > 0 ? fe.obiettivo : v.obiettivo; return o > 0 ? o - saldoSalvadanaio(mesi, v, ym) : 0; };
-    if ((m.l || []).some(function (l) { return String(l).toLowerCase() === 'tcg'; }) && ha(x.tcg)) return {b: x.tcg, motivo: 'Vendita di carte: va al fondo TCG'};
+    if (((m.l || []).some(function (l) { return String(l).toLowerCase() === 'tcg'; }) || (m.c && m.c === x.carte)) && ha(x.tcg)) return {b: x.tcg, motivo: 'Vendita di carte: va al fondo TCG'};
     if (m.e < x.soglia) return {b: x.cuscinetto, motivo: 'Sotto ' + x.soglia + ' €: nel cuscinetto'};
     var em = pots.find(function (v) { return v.nome === (fe.sottosaldo || x.emergenze); });
     if (em && manca(em) > 0.005) return {b: em.nome, motivo: 'Il fondo emergenze è sotto il suo obiettivo'};
@@ -436,7 +449,7 @@
     return out;
   }
 
-  var api = {riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

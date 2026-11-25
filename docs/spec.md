@@ -27,15 +27,15 @@ Tutto sotto `users/<uid>/`. Ogni campo nuovo è opzionale e la scrittura resta `
 | `q` | quota del Joint applicata (percentuale) salvata al momento della registrazione, così i movimenti passati non cambiano |
 | `l` | lista di etichette |
 | `v` | voce del salvadanaio (per esempio assicurazione dentro Auto fissi) |
-| `t` | tipo: assente = normale; `g` giroconto; `x2` entrata extra; `vj` versamento della compagna; `cr` credito; `rb` rimborso |
-| `b` | solo entrata extra: busta di destinazione scelta |
+| `t` | tipo: assente = normale (spesa o entrata); `g` giroconto; `vj` versamento della compagna; `cr` credito; `rb` rimborso. `x2` (entrata extra) non si scrive più dall'attività R3: i movimenti vecchi si leggono come un'entrata in una categoria che non finanzia il mese |
+| `b` | solo entrata in una categoria che non finanzia il mese: busta di destinazione scelta (vuoto altrimenti) |
 | `r` | id del credito chiuso da un rimborso |
 
 Regole: un movimento sul Joint ha `u` intero e `p = u × q`. Una spesa divisa con altri ha `p` e crea un credito aperto per `u − p`. Un versamento della compagna (`vj`) conta solo nel saldo del Joint.
 
 ### `spese_config/main`
 
-- `categorie`: lista di `{nome, gruppo, budget, joint, taglio, archiviata}`. `budget` è **mensile** (oggi il campo `budget` è annuale e sparisce). `joint` = la spesa passa dal Joint alla quota. `taglio` = priorità di taglio (solo non necessarie).
+- `categorie`: lista di `{nome, gruppo, budget, joint, taglio, archiviata, entrata?, finanzia?}`. `entrata: true` = **categoria di entrata** (Stipendio, Tredicesima, Rimborsi, Vendita carte, Altro): non ha budget, gruppo né `taglio` (la validazione lo rifiuta), non compare tra le categorie di spesa e un movimento di entrata ne sceglie una. `finanzia: true` (solo su una categoria di entrata, di norma Stipendio) = un'entrata in questa categoria finanzia il mese; le altre non toccano il mese e propongono una destinazione. `budget` è **mensile** (oggi il campo `budget` è annuale e sparisce). `joint` = la spesa passa dal Joint alla quota. `taglio` = priorità di taglio (solo non necessarie).
   - `taglio` è un intero positivo **unico** tra le categorie non archiviate; vuoto = fuori classifica. Un numero già usato sposta in giù di uno la catena sotto; togliere il numero non rinumera (i buchi restano). Le archiviate non partecipano (`riordinaTaglio` in `logic.js`).
 - `salvadanai`: lista di `{nome, gruppo, conto, voci: [{nome, annuale, data, cicli?, cambio?}], quota?, saldoIniziale: {data, importo}, obiettivo?, sottosaldo?}`. `obiettivo` (opzionale, euro): sotto questo saldo il salvadanaio è "in ammanco" (e, per il fondo emergenze, "toccato") nel suggerimento delle entrate extra. Il saldo include le entrate extra con `b` = nome del salvadanaio. La quota mensile è la somma delle voci o, senza voci, il valore fisso `quota`. Voce: `data` = mese di scadenza `YYYY-MM`; `cicli` = mesi del ciclo (assente = 12); `cambio` = `{da: 'YYYY-MM', quota}`: dal mese `da` la quota della voce è quel valore fisso, al posto di quella calcolata. Il saldo resta uno solo: `v` sul movimento è solo un'etichetta.
 - `conti`: lista di `{nome, joint, chiuso, sottosaldi?}`. `joint` = conto comune: le spese su di esso hanno `u` intero con `p` e `q` calcolati dalla quota, e solo su di esso va il versamento della compagna. Un conto chiuso resta nei saldi storici e non accetta movimenti nuovi.
@@ -65,7 +65,7 @@ I vecchi campi `gruppi`, `colori` e `budget` annuale vengono ignorati e rimossi 
 ## Regole di calcolo (tutte in `logic.js`, con test)
 
 1. **La mia parte** di un movimento: `p` se presente, altrimenti `u` (e `e` per le entrate). I giroconti, i versamenti della compagna e i crediti aperti non sono mie spese.
-2. **Speso di una categoria nel mese** = somma delle mie parti dei movimenti con quella `c` nel mese. Nessun riporto.
+2. **Speso di una categoria nel mese** = somma delle mie parti delle **spese** con quella `c` nel mese. Nessun riporto. Un'entrata non riduce mai lo speso, qualunque sia la sua categoria.
 3. **Residuo del budget** = budget − speso. **Percentuale usata** = speso / budget, solo di questo mese.
 4. **Spendibile** = somma dei residui dei budget del mese (Joint alla mia quota). Esclude salvadanai e fondo emergenze. Non dipende dai saldi dei conti.
 5. **Avvisi**: dopo ogni salvataggio, se la percentuale usata di una categoria passa una soglia (80%, 100%) che prima del movimento non era passata, mostra un avviso.
@@ -73,7 +73,7 @@ I vecchi campi `gruppi`, `colori` e `budget` annuale vengono ignorati e rimossi 
 7. **Quota di una voce**: `importo ÷ mesi mancanti alla data`; dopo il pagamento si ricalcola sul nuovo ciclo (per esempio ogni 24 mesi). Una voce può avere una quota che cambia a una data.
 8. **Quota del Joint**: vale quella con `da` più recente non successiva alla data del movimento. Si salva in `q` e non si ricalcola sui movimenti passati.
 9. **Credito**: `u − p` di una spesa divisa. Resta aperto finché un rimborso (`t: rb`, `r: id`) lo chiude. Non entra in budget né spendibile.
-10. **Entrata extra**: mai nel mese. Alla registrazione propone una destinazione (sotto una soglia → cuscinetto; sopra → fondo emergenze se toccato, salvadanai in ammanco, livello 3-5 anni, cuscinetto; vendite di carte → fondo TCG). L'utente decide e salva `b`.
+10. **Entrata per categoria** (R3, sostituisce l'entrata extra): solo un'entrata in una categoria con `finanzia` (lo stipendio) è del mese (`meseCalc.stipendio`, informativo: lo spendibile resta la somma dei residui). Un'entrata in qualsiasi altra categoria di entrata non tocca il mese, non entra in `meseCalc`, spendibile o piano; alla registrazione propone una destinazione (categoria Vendita carte o etichetta TCG → fondo TCG; sotto una soglia → cuscinetto; sopra → fondo emergenze se toccato, salvadanai in ammanco, livello 3-5 anni, cuscinetto). L'utente decide e salva `b`; il saldo del salvadanaio con quel nome cresce.
 11. **Patrimonio** = saldi di tutti i conti, con il Joint alla mia quota, più il valore degli investimenti e il magazzino TCG. Nei conti non entra mai il versamento della compagna come mio.
 12. **Posso permettermelo?**: data una spesa ipotetica e una categoria, dice se il residuo basta. Se no, elenca le buste da cui prendere, in ordine di `taglio` (prima le non necessarie con numero più basso).
 13. **Chiusura del mese**: per ogni budget con avanzo o sforo, chiede una scelta (avanzo → risparmio o salvadanaio; sforo → quale busta lo copre). Mai automatica.
@@ -86,7 +86,7 @@ I vecchi campi `gruppi`, `colori` e `budget` annuale vengono ignorati e rimossi 
 Stesse funzioni su telefono e PC. Sul telefono, un solo flusso veloce per registrare.
 
 - **Home:** spendibile e patrimonio sempre in alto; elenco delle categorie con speso, residuo e percentuale; pulsante grande "Nuovo movimento".
-- **Nuovo movimento** (priorità 1): importo, categoria, conto, nota, etichette; scelta "spesa / entrata / giroconto / versamento compagna / credito". Sul Joint: quota automatica. Spesa divisa: la mia parte e il credito. Avviso soglie dopo il salvataggio.
+- **Nuovo movimento** (priorità 1): importo, categoria, conto, nota, etichette; scelta "spesa / entrata / giroconto / versamento compagna / credito". L'entrata sceglie tra le categorie di entrata; se non finanzia il mese compare la destinazione. Sul Joint: quota automatica. Spesa divisa: la mia parte e il credito. Avviso soglie dopo il salvataggio.
 - **Elenco movimenti:** filtri per mese, categoria, conto, etichetta; ricerca nella nota; modifica ed eliminazione.
 - **Piano del mese** (priorità 2): stipendio, divisione tra budget e salvadanai, quanto resta da assegnare.
 - **Salvadanai:** saldo, quota, voci, scadenze, previsione di copertura.
@@ -105,7 +105,7 @@ Script ripetibile (nello stesso stile dell'import attuale, file locale in `dati/
 2. Mappa le categorie del foglio:
    - Spesa casa e Spesa cibo → Spesa cibo e casa; Hobby, Eventi, Shopping, Vestiti → Shopping & Svago, con il nome vecchio come etichetta; Parrucchiere e Spesa self care → Self care; Medicine e Visite salute → Salute; Manutenzione Auto, Parcheggi, Multe → Auto variabili, con etichetta; Assicurazione auto e Bollo auto → Auto fissi, come voci; Animali resta Animali; Bollette resta Bollette.
    - Compravendita, Tornei TCG, Judge, Judge Venezia, Judge Lucca, Torneo Londra, OP17 Anniversary, Viaggio Barcellona → TCG, con il nome vecchio come etichetta.
-   - Stipendio → entrata di tipo stipendio. Rimborso assicurazione, Referral Revolut, Rimborso papa auto → entrate extra.
+   - Stipendio → entrata nella categoria Stipendio (`finanzia`). Rimborso assicurazione, Referral Revolut, Rimborso papa auto → entrata in Rimborsi (o Altro), non stipendio. Compravendita incassi → entrata in Vendita carte. Le categorie di entrata (Stipendio, Tredicesima, Rimborsi, Vendita carte, Altro) esistono già nella configurazione iniziale (R3).
    - Prestiti → credito. Investimenti e PAC mensile → uscite nella categoria Investimenti.
    - Viaggio Jap, Vacanze, Trasloco, Tatuaggio Lione, Documenti, Check Money, Offerte cucci → categorie archiviate, senza modifiche.
 3. Giroconti a due righe → una riga (`k` → `a`).

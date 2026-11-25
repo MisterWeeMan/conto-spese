@@ -179,9 +179,11 @@ details summary{cursor:pointer;font-weight:500}
       <form id="catForm" autocomplete="off">
         <p class="stato tutta">* obbligatorio</p>
         <label class="tutta"><span>Nome<b class="ob" aria-hidden="true">*</b></span><input id="catNome" required maxlength="60"></label>
-        <label>Gruppo<select id="catGruppo"><option value="">Nessuno</option><option>Necessarie</option><option>Non necessarie</option><option>Risparmi</option></select></label>
-        <label>Budget mensile (€)<input id="catBudget" inputmode="decimal" data-eur="zero" placeholder="0 = nessun budget"></label>
-        <label>Priorità di taglio<input id="catTaglio" inputmode="numeric" placeholder="1 = prima da tagliare"></label>
+        <label class="chk tutta"><input type="checkbox" id="catEntr">Categoria di entrata (stipendio, rimborsi, vendite…)</label>
+        <label class="chk tutta" id="catFinL" hidden><input type="checkbox" id="catFin">Finanzia il mese (lo stipendio)</label>
+        <label data-spesa>Gruppo<select id="catGruppo"><option value="">Nessuno</option><option>Necessarie</option><option>Non necessarie</option><option>Risparmi</option></select></label>
+        <label data-spesa>Budget mensile (€)<input id="catBudget" inputmode="decimal" data-eur="zero" placeholder="0 = nessun budget"></label>
+        <label data-spesa>Priorità di taglio<input id="catTaglio" inputmode="numeric" placeholder="1 = prima da tagliare"></label>
         <label class="chk"><input type="checkbox" id="catArch">Archiviata</label>
         <label class="tutta" id="catDestBox" hidden>Se la elimini, sposta i movimenti in<select id="catDest"></select></label>
         <p class="stato tutta" id="catNota" hidden></p>
@@ -312,7 +314,6 @@ details summary{cursor:pointer;font-weight:500}
           <details id="altro">
             <summary id="altroSum">Altro</summary>
             <div class="tipo alt" role="radiogroup" aria-label="Altri tipi di movimento">
-              <label title="Tredicesima, vendite, regali: non entra nel mese, la assegni a una busta"><input type="radio" name="tipo" value="x2">Entrata extra</label>
               <label id="tipoVj" title="Versamento della compagna sul Joint: conta solo nel saldo del Joint (compare con un conto Joint)"><input type="radio" name="tipo" value="vj">Compagna</label>
               <label title="Soldi che ho prestato a qualcuno"><input type="radio" name="tipo" value="cr">Credito</label>
               <label title="Chiude un credito aperto"><input type="radio" name="tipo" value="rb">Rimborso</label>
@@ -320,17 +321,17 @@ details summary{cursor:pointer;font-weight:500}
           </details>
         </div>
         <label class="tutta"><span>Importo (€)<b class="ob" aria-hidden="true">*</b></span><input id="importo" inputmode="decimal" data-eur placeholder="0,00"></label>
-        <label data-per="u e"><span>Categoria<b data-ob="u" class="ob" aria-hidden="true">*</b></span><select id="categoria"></select></label>
-        <label class="tutta" data-per="x2" id="destL"><span>Destinazione<b class="ob" aria-hidden="true">*</b></span><select id="dest"></select></label>
+        <label data-per="u e"><span>Categoria<b data-ob="u e" class="ob" aria-hidden="true">*</b></span><select id="categoria"></select></label>
+        <label class="tutta" id="destL" hidden><span>Destinazione<b class="ob" aria-hidden="true">*</b></span><select id="dest"></select></label>
         <p class="stato tutta" id="destNota" hidden></p>
-        <label data-per="u e x2 g vj cr rb" id="contoL"><span>Conto<b class="ob" aria-hidden="true">*</b></span><select id="conto"></select></label>
+        <label data-per="u e g vj cr rb" id="contoL"><span>Conto<b class="ob" aria-hidden="true">*</b></span><select id="conto"></select></label>
         <label data-per="g"><span>Conto di arrivo<b class="ob" aria-hidden="true">*</b></span><select id="contoA"></select></label>
         <label class="tutta" data-per="u" id="voceL" hidden>Voce del salvadanaio<select id="voce"></select></label>
         <label class="tutta" data-per="rb"><span>Credito che chiude<b class="ob" aria-hidden="true">*</b></span><select id="credito"></select></label>
         <label class="tutta" data-per="u">La mia parte, se divisa con altri (€)<input id="parte" inputmode="decimal" data-eur="zero" placeholder="Vuota = tutto mio"></label>
         <p class="stato tutta" id="jointNota" hidden></p>
         <label class="tutta">Nota<input id="nota" placeholder="Es. Spesa, Benzina"></label>
-        <label class="tutta" data-per="u e x2 g cr">Etichette<input id="etichette" list="etList" placeholder="Separate da virgola. Es. TCG, Torneo"></label>
+        <label class="tutta" data-per="u e g cr">Etichette<input id="etichette" list="etList" placeholder="Separate da virgola. Es. TCG, Torneo"></label>
         <label class="tutta"><span>Data<b class="ob" aria-hidden="true">*</b></span><input id="data" type="date" required></label>
         <div class="azioni tutta">
           <button class="btn pri" id="salva" type="submit">Aggiungi</button>
@@ -364,7 +365,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {saldoSalvadanaio, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, creditiAperti, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota} = window.CSLogic;
+const {saldoSalvadanaio, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota} = window.CSLogic;
 const {validaImporto, validaQuotaJoint} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 
@@ -388,8 +389,11 @@ document.addEventListener('input', ev => {
 const st = {mesi: {}, cfg: cfgNorm({}), ym: todayISO().slice(0, 7), edit: null, catEdit: null, catOrd: {k: 'nome', dir: 1}, catInfo: [], q: '', pronto: false, cfgPronto: false};
 const ready = () => st.uid && st.pronto && st.cfgPronto;
 const nMov = n => `${n} moviment${n === 1 ? 'o' : 'i'}`;
-const TIPI = {g: 'Giroconto', vj: 'Versamento compagna', cr: 'Credito', rb: 'Rimborso', x2: 'Entrata extra'};
+const TIPI = {g: 'Giroconto', vj: 'Versamento compagna', cr: 'Credito', rb: 'Rimborso'};
 const tipo = () => document.querySelector('input[name=tipo]:checked').value;
+// an Entrata asks where it goes when its category is an income category that does not fund the month (an edited legacy one keeps its own destination)
+const chiedeDest = c => { const x = st.cfg.categorie.find(k => k.nome === c); return !!(x?.entrata && !x.finanzia) || !!(st.edit?.b && st.edit.c === c); };
+const tipoCat = r => r.entrata ? (r.finanzia ? 'Entrata · finanzia il mese' : 'Entrata') : 'Spesa';
 function rigaBudget(r) {
   const over = r.residuo < -0.005, cls = over ? 'over' : r.pct >= 0.8 ? 'warn' : 'ok';
   return `<div class="riga ${cls}"><span class="nome">${esc(r.c)}${over ? '<span class="pill">sforato</span>' : ''}</span><span class="res">${eur.format(r.residuo)}</span>
@@ -436,7 +440,7 @@ function render() {
     $('lista').innerHTML = vis.length ? vis.map(m => `<button type="button" class="mov${st.edit?.id === m.id ? ' sel' : ''}" data-id="${esc(m.id)}">
       <span class="g">${m.d.slice(8)}/${m.d.slice(5, 7)}</span><span class="n">${esc(m.n || m.c || 'Senza nota')}</span>
       <span class="a${net(m) > 0 ? ' pos' : ''}">${eur.format(net(m))}</span>
-      <span class="s">${esc(m.c || (m.t === 'x2' && m.b ? `Entrata extra → ${m.b}` : TIPI[m.t]) || 'Senza categoria')}${m.k ? ' · ' + esc(m.k) + (m.t === 'g' && m.a ? ' → ' + esc(m.a) : '') : ''}${m.p != null && m.t !== 'g' ? ' · mia parte ' + eur.format(m.p) : ''}${m.l?.length ? ' · #' + m.l.map(esc).join(' #') : ''}</span></button>`).join('')
+      <span class="s">${esc(m.c || (m.e && m.b && !m.u && (!m.t || m.t === 'x2') ? `Entrata → ${m.b}` : TIPI[m.t]) || 'Senza categoria')}${m.k ? ' · ' + esc(m.k) + (m.t === 'g' && m.a ? ' → ' + esc(m.a) : '') : ''}${m.p != null && m.t !== 'g' ? ' · mia parte ' + eur.format(m.p) : ''}${m.l?.length ? ' · #' + m.l.map(esc).join(' #') : ''}</span></button>`).join('')
       : `<p class="vuoto">${q ? 'Nessun movimento corrisponde alla ricerca.' : `Nessun movimento a ${esc(nome)}. Aggiungi il primo dal modulo.`}</p>`;
   }
 
@@ -445,23 +449,23 @@ function render() {
   const pots = svLista();
   st.catInfo = tutte.filter(r => !pots.some(v => v.nome === r.c)); // a pot is not a category: it has its own page
   st.nSv = Object.fromEntries(tutte.map(r => [r.c, r.n]));
-  Object.keys(st.mesi).forEach(k => movs(k).forEach(m => { if (m.t === 'x2' && m.b) st.nSv[m.b] = (st.nSv[m.b] || 0) + 1; })); // extra income assigned to a pot counts as use
+  Object.keys(st.mesi).forEach(k => movs(k).forEach(m => { if (m.e && m.b && !m.u && (!m.t || m.t === 'x2')) st.nSv[m.b] = (st.nSv[m.b] || 0) + 1; })); // extra income assigned to a pot counts as use
   st.cats = st.catInfo.map(r => r.c);
   renderSv(pots);
   if (st.pronto) {
     const cq = $('catCerca').value.trim().toLowerCase();
     const cv = st.catInfo.filter(r => r.c.toLowerCase().includes(cq));
-    const o = st.catOrd, v = r => o.k === 'nome' ? r.c : o.k === 'taglio' ? r.taglio || null : o.k === 'archiviata' ? !!r.archiviata : o.k === 'budget' ? r.budget || 0 : o.k === 'n' ? r.n : r.gruppo || '';
+    const o = st.catOrd, v = r => o.k === 'nome' ? r.c : o.k === 'taglio' ? r.taglio || null : o.k === 'archiviata' ? !!r.archiviata : o.k === 'tipo' ? tipoCat(r) : o.k === 'budget' ? r.budget || 0 : o.k === 'n' ? r.n : r.gruppo || '';
     cv.sort((x, y) => { // numbers: no priority always last; text with the Italian collation
       const p = v(x), q = v(y);
       if (o.k === 'taglio' && (p === null || q === null)) return p === q ? 0 : p === null ? 1 : -1;
       return o.dir * (typeof p === 'string' ? p.localeCompare(q, 'it') : p - q);
     });
     $('catConta').textContent = `${cq ? `${cv.length} di ${st.catInfo.length}` : st.catInfo.length} categorie · movimenti in tutti gli anni`;
-    const COL = [['nome', 'Nome', ''], ['gruppo', 'Gruppo', ''], ['budget', 'Budget mensile', 'd'], ['taglio', 'Priorità', 'd'], ['archiviata', 'Archiviata', ''], ['n', 'Movimenti', 'd']];
+    const COL = [['nome', 'Nome', ''], ['tipo', 'Tipo', ''], ['gruppo', 'Gruppo', ''], ['budget', 'Budget mensile', 'd'], ['taglio', 'Priorità', 'd'], ['archiviata', 'Archiviata', ''], ['n', 'Movimenti', 'd']];
     $('catLista').innerHTML = cv.length ? `<table class="tab"><thead><tr>${COL.map(([k, l, c]) => `<th scope="col" class="${c}" aria-sort="${o.k === k ? (o.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" data-ord="${k}">${l}${o.k === k ? (o.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr></thead><tbody>${cv.map(r => `<tr data-cat="${esc(r.c)}" class="${st.catEdit === r.c ? 'sel' : ''}">
-      <td><button type="button" class="nm" aria-label="Modifica ${esc(r.c)}">${esc(r.c)}</button></td><td>${esc(r.gruppo || '–')}</td><td class="d">${r.budget > 0 ? eur.format(r.budget) : '–'}</td>
-      <td class="d"><input class="pri" inputmode="numeric" value="${r.taglio > 0 ? r.taglio : ''}" placeholder="–" aria-label="Priorità di taglio di ${esc(r.c)}" data-pri="${esc(r.c)}"></td>
+      <td><button type="button" class="nm" aria-label="Modifica ${esc(r.c)}">${esc(r.c)}</button></td><td>${tipoCat(r)}</td><td>${esc(r.gruppo || '–')}</td><td class="d">${r.budget > 0 ? eur.format(r.budget) : '–'}</td>
+      <td class="d">${r.entrata ? '–' : `<input class="pri" inputmode="numeric" value="${r.taglio > 0 ? r.taglio : ''}" placeholder="–" aria-label="Priorità di taglio di ${esc(r.c)}" data-pri="${esc(r.c)}">`}</td>
       <td>${r.archiviata ? 'Sì' : 'No'}</td><td class="d">${r.n}</td></tr>`).join('')}</tbody></table>`
       : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
@@ -479,8 +483,9 @@ function renderForm() {
   };
   const piu = (base, ...extra) => [...new Set([...base, ...extra.filter(Boolean)])].map(x => [x]);
   // a pot is chosen like a category, only for expenses
-  const nomi = [...categorieAttive(st.cfg).map(c => c.nome), ...(t === 'u' ? svLista().map(v => v.nome) : [])].sort((a, b) => a.localeCompare(b, 'it'));
-  fill('categoria', piu(nomi, e?.c), t === 'u' ? 'Scegli…' : 'Nessuna');
+  // an income picks among the income categories (R3), an expense among the spending ones and the pots
+  const nomi = [...(t === 'e' ? categorieEntrata(st.cfg) : categorieAttive(st.cfg)).map(c => c.nome), ...(t === 'u' ? svLista().map(v => v.nome) : [])].sort((a, b) => a.localeCompare(b, 'it'));
+  fill('categoria', piu(nomi, e?.c), t === 'u' || t === 'e' ? 'Scegli…' : 'Nessuna');
   const conti = contiAttivi(st.cfg).map(c => c.nome);
   fill('conto', piu(t === 'vj' ? conti.filter(k => contoJoint(st.cfg, k)) : conti, e?.k), 'Scegli…');
   fill('contoA', piu(conti, e?.a), 'Scegli…');
@@ -494,7 +499,7 @@ function renderForm() {
 }
 
 // show only the fields of the chosen type; Joint note and split field depend on the account
-const ALTRI = ['x2', 'vj', 'cr', 'rb'];
+const ALTRI = ['vj', 'cr', 'rb'];
 function aggiorna() {
   // Compagna is offered only with a Joint account chosen (an edited one keeps it on its own account); if the account changes under it, back to Spesa
   const vjOk = contoJoint(st.cfg, $('conto').value) || (st.edit?.t === 'vj' && $('conto').value === st.edit.k);
@@ -516,9 +521,11 @@ function aggiorna() {
 // Extra income: proposes a destination from the amount, the label and the date; the choice stays the user's
 // (once they pick one, dest.dataset.man is set and the suggestion only shows as a note).
 function suggerisci(t) {
-  $('destNota').hidden = t !== 'x2';
-  if (t !== 'x2') return;
-  const imp = validaImporto($('importo').value).v, s = imp ? window.CSLogic.destinazioneExtra(st.mesi, st.cfg, {d: $('data').value || todayISO(), e: imp, l: parseEtichette($('etichette').value)}) : null;
+  // R3: an income in a category that does not fund the month (anything but the salary) asks where it goes
+  const extra = t === 'e' && chiedeDest($('categoria').value);
+  $('destL').hidden = $('destNota').hidden = !extra;
+  if (!extra) return;
+  const imp = validaImporto($('importo').value).v, s = imp ? window.CSLogic.destinazioneExtra(st.mesi, st.cfg, {d: $('data').value || todayISO(), e: imp, c: $('categoria').value, l: parseEtichette($('etichette').value)}) : null;
   if (s && !$('dest').dataset.man && [...$('dest').options].some(o => o.value === s.b)) $('dest').value = s.b;
   $('destNota').textContent = s ? `Suggerito: ${s.b}. ${s.motivo}. Scegli tu.` : "Scrivi l'importo per vedere il suggerimento.";
 }
@@ -552,7 +559,7 @@ function setEdit(m) {
   $('salva').textContent = m ? 'Salva modifiche' : 'Aggiungi';
   $('elimina').hidden = $('annulla').hidden = !m;
   $('elimina').textContent = 'Elimina'; delete $('elimina').dataset.ok;
-  const t = !m ? 'u' : TIPI[m.t] ? m.t : m.e ? 'e' : 'u';
+  const t = !m ? 'u' : TIPI[m.t] ? m.t : m.e ? 'e' : 'u'; // a legacy x2 opens as an Entrata
   document.querySelector(`input[name=tipo][value=${t}]`).checked = true;
   pulisciErr($('form'));
   $('altro').open = ALTRI.includes(t);
@@ -564,7 +571,7 @@ function setEdit(m) {
   st.caricando = true; // the account is set after the options: aggiorna() must not take Compagna away meanwhile
   renderForm(); // options first (they include the movement's own category and accounts), then the values
   $('categoria').value = m?.c || '';
-  if (m?.t === 'x2') { $('dest').dataset.man = 1; $('dest').value = m.b || ''; } else delete $('dest').dataset.man; // an edited one keeps its choice
+  if (m?.e && m.b) { $('dest').dataset.man = 1; $('dest').value = m.b || ''; } else delete $('dest').dataset.man; // an edited one keeps its choice
   renderVoce(m?.v || '');
   $('conto').value = m ? m.k || '' : ricorda('conto') || '';
   $('contoA').value = m?.a || ''; $('credito').value = m?.r || '';
@@ -589,16 +596,18 @@ $('form').addEventListener('submit', async ev => {
   const fail = (msg, id) => { toast(msg); $(id).focus(); };
   if (imp === null) { $('importo').focus(); return; }
   if (!ready()) { toast('Il database non è ancora pronto'); return; }
-  const k = $('conto').value, c = t === 'u' || t === 'e' ? $('categoria').value : '', entra = t === 'e' || t === 'x2' || t === 'vj' || t === 'rb', b = t === 'x2' ? $('dest').value : '';
+  const k = $('conto').value, c = t === 'u' || t === 'e' ? $('categoria').value : '', entra = t === 'e' || t === 'vj' || t === 'rb';
+  const extra = t === 'e' && chiedeDest(c), b = extra ? $('dest').value : '';
   if (!k) return fail('Scegli il conto', 'conto');
   if (t === 'u' && !c) return fail('Scegli la categoria', 'categoria');
-  if (t === 'x2' && !b) return fail("Scegli dove va l'entrata extra", 'dest');
+  if (t === 'e' && !c && !(st.edit && !st.edit.c)) return fail(categorieEntrata(st.cfg).length ? 'Scegli la categoria di entrata' : 'Crea prima una categoria di entrata in Categorie', 'categoria');
+  if (extra && !b) return fail("Scegli dove va l'entrata", 'dest');
   if (t === 'vj' && !contoJoint(st.cfg, k)) return fail('Il versamento della compagna va su un conto Joint: segnalalo in Configurazione', 'conto');
   const a = t === 'g' ? $('contoA').value : '', r = t === 'rb' ? $('credito').value : '';
   if (t === 'g' && (!a || a === k)) return fail('Scegli due conti diversi', 'contoA');
   if (t === 'rb' && !r) return fail('Scegli il credito che chiude', 'credito');
   // tutti i campi sempre presenti (p, q, a, r, l, t...): la scrittura fonde, quindi un campo omesso terrebbe il valore vecchio
-  // t: normal rows are '' ; x2 = extra income (never in the month, b = chosen destination, always written); the others come from the choice
+  // t: normal rows are '' (an income outside the funding categories is never in the month; b = chosen destination, always written, '' otherwise; t:'x2' is read but no longer written); the others come from the choice
   const m = {d: $('data').value, n: $('nota').value.trim(), e: entra ? imp : 0, u: entra ? 0 : imp, c, k, a, r, b, p: null, q: null,
     l: $('etichette').closest('[data-per]').hidden ? [] : parseEtichette($('etichette').value),
     v: t === 'u' && !$('voceL').hidden ? $('voce').value : '',
@@ -714,7 +723,7 @@ function setCatEdit(c) {
   $('catElimina').hidden = $('catAnnulla').hidden = !r;
   $('catElimina').textContent = 'Elimina'; delete $('catElimina').dataset.ok;
   // a used category is deleted only by moving its movements to another one: without category they would silently become transfers
-  const altre = (st.cats || []).filter(c => c !== r?.c);
+  const altre = (st.catInfo || []).filter(x => x.c !== r?.c && !x.entrata === !r?.entrata).map(x => x.c); // same kind: expenses never move into an income category
   $('catElimina').disabled = !!r?.n && !altre.length;
   $('catNota').hidden = $('catDestBox').hidden = !r?.n;
   if (r?.n) $('catNota').textContent = `Usata in ${nMov(r.n)} in tutti gli anni: se la rinomini i movimenti la seguono.${altre.length ? '' : ' Per eliminarla crea prima un\'altra categoria.'}`;
@@ -724,17 +733,25 @@ function setCatEdit(c) {
   $('catNome').value = r ? r.c : '';
   $('catGruppo').value = r?.gruppo || ''; $('catBudget').value = r?.budget > 0 ? String(r.budget).replace('.', ',') : '';
   $('catTaglio').value = r?.taglio ?? ''; $('catArch').checked = !!r?.archiviata;
+  $('catEntr').checked = !!r?.entrata; $('catFin').checked = !!r?.finanzia; catTipo();
 }
+// income categories have no budget, priority or group: the spending fields go away, "finanzia il mese" appears
+function catTipo() {
+  const en = $('catEntr').checked;
+  $('catFinL').hidden = !en; if (!en) $('catFin').checked = false;
+  for (const el of $('catForm').querySelectorAll('[data-spesa]')) el.hidden = en;
+}
+$('catEntr').addEventListener('change', catTipo);
 $('catForm').addEventListener('submit', ev => {
   ev.preventDefault();
   const nome = $('catNome').value.trim(), da = st.catEdit;
   if (!nome) { $('catNome').focus(); return; }
   if (!ready()) { toast('Il database non è ancora pronto'); return; }
   if ([...st.cats, ...svLista().map(v => v.nome)].some(c => c !== da && c.toLowerCase() === nome.toLowerCase())) { toast('Esiste già una categoria o un salvadanaio con questo nome'); return; }
-  const budget = leggi($('catBudget')), ts = $('catTaglio').value.trim(), taglio = ts ? parseInt(ts, 10) : null;
+  const en = $('catEntr').checked, budget = en ? 0 : leggi($('catBudget')), ts = en ? '' : $('catTaglio').value.trim(), taglio = ts ? parseInt(ts, 10) : null;
   if (budget === null) { $('catBudget').focus(); return; }
   if (ts && !(taglio > 0)) { toast('Priorità di taglio non valida'); $('catTaglio').focus(); return; }
-  const nuova = {nome, gruppo: $('catGruppo').value, budget, taglio, archiviata: $('catArch').checked};
+  const nuova = {nome, gruppo: en ? '' : $('catGruppo').value, budget, taglio, archiviata: $('catArch').checked, entrata: en, finanzia: en && $('catFin').checked};
   // unique cut priority: the other categories shift down when the number is taken
   const prev = st.catInfo.find(x => x.c === da) || {};
   const mod = window.CSLogic.riordinaTaglio([...st.catInfo.filter(c => c.c !== da), {nome: da || nome, taglio: prev.taglio, archiviata: nuova.archiviata}], da || nome, taglio);
