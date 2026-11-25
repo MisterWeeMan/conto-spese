@@ -442,3 +442,55 @@ test('validaConfig: reports duplicates, unknown accounts, bad dates, bad plan ro
   for (const parte of ['Duplicate category affitto', 'Group Boh', 'Budget -1', 'Account Nessuno', 'Voce Bollo date', 'quotaJoint', 'soglie', 'Label x', 'Plan 2027-01 row Fantasma', 'Plan gennaio', 'Duplicate category or pot svago', 'Opening balance of pot Svago'])
     assert.ok(e.includes(parte), parte + ' not reported in: ' + e);
 });
+
+// permettermelo: invented data. Month 2027-01.
+const cfgPm = {
+  categorie: [
+    {nome: 'Spesa', gruppo: 'Necessarie', budget: 300},
+    {nome: 'Cinema', gruppo: 'Non necessarie', budget: 40, taglio: 2},
+    {nome: 'Svago', gruppo: 'Non necessarie', budget: 100, taglio: 1},
+    {nome: 'Regali', gruppo: 'Non necessarie', budget: 50},       // out of the ranking
+    {nome: 'Libri', gruppo: 'Non necessarie', budget: 30, taglio: 3},
+  ],
+  salvadanai: [{nome: 'Vacanze', gruppo: 'Risparmi', conto: 'Revolut', saldoIniziale: {data: '2027-01-01', importo: 500}, quota: 0}],
+};
+const mesiPm = {'2027-01': {a: {d: '2027-01-05', u: 290, c: 'Spesa'}, b: {d: '2027-01-06', u: 30, c: 'Svago'}, c: {d: '2027-01-07', u: 40, c: 'Libri'}}};
+
+test('permettermelo: fits when the residual covers it, and says what is left', () => {
+  const r = L.permettermelo(mesiPm, cfgPm, '2027-01', 'Svago', 50);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.resta, 20);
+});
+
+test('permettermelo: the exact residual still fits (resta 0)', () => {
+  assert.strictEqual(L.permettermelo(mesiPm, cfgPm, '2027-01', 'Svago', 70).resta, 0);
+});
+
+test('permettermelo: one bucket is enough, lowest taglio first, pots and the unranked are left out', () => {
+  const r = L.permettermelo(mesiPm, cfgPm, '2027-01', 'Spesa', 25); // residuo 10, manca 15
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.manca, 15);
+  assert.deepStrictEqual(r.proposte, [{c: 'Svago', taglio: 1, residuo: 70, prendi: 15}]);
+  assert.strictEqual(r.scoperto, 0);
+});
+
+test('permettermelo: several buckets in taglio order; an overspent one (residuo <= 0) is skipped', () => {
+  const r = L.permettermelo(mesiPm, cfgPm, '2027-01', 'Spesa', 100); // manca 90; Svago 70, Cinema 40, Libri -10
+  assert.deepStrictEqual(r.proposte.map(p => [p.c, p.residuo, p.prendi]), [['Svago', 70, 70], ['Cinema', 40, 20]]);
+  assert.strictEqual(r.scoperto, 0);
+});
+
+test('permettermelo: when the ranked buckets are not enough, scoperto says how much is still missing', () => {
+  const r = L.permettermelo(mesiPm, cfgPm, '2027-01', 'Spesa', 200); // manca 190; 70 + 40 = 110
+  assert.strictEqual(r.proposte.length, 2);
+  assert.strictEqual(r.scoperto, 80);
+});
+
+test('permettermelo: no bucket available, and the category itself is never proposed', () => {
+  const r = L.permettermelo(mesiPm, cfgPm, '2027-01', 'Libri', 5); // residuo -10, manca 15
+  assert.deepStrictEqual(r.proposte.map(p => p.c), ['Svago']);
+  const solo = {categorie: [{nome: 'A', budget: 10}, {nome: 'B', budget: 10}]};
+  const s = L.permettermelo({}, solo, '2027-01', 'A', 30);
+  assert.deepStrictEqual(s.proposte, []);
+  assert.strictEqual(s.scoperto, 20);
+});

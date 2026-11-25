@@ -141,6 +141,7 @@ details summary{cursor:pointer;font-weight:500}
       <a href="#categorie">Categorie</a>
       <a href="#salvadanai">Salvadanai</a>
       <a href="#piano">Piano del mese</a>
+      <a href="#permettermelo">Posso permettermelo?</a>
       <a href="#config">Configurazione</a>
     </nav>
   </dialog>
@@ -228,6 +229,16 @@ details summary{cursor:pointer;font-weight:500}
       </div>
       <p class="stato">Salvare il piano non cambia i budget né le quote dei salvadanai: ne registra la divisione di questo mese.</p>
     </section>
+  </div>
+
+  <div class="due" id="pagPermettermelo" hidden>
+    <section class="box">
+      <h2>Posso permettermelo?</h2>
+      <label>Importo (€)<input id="pmImporto" inputmode="decimal" placeholder="Es. 45" autocomplete="off"></label>
+      <label>Categoria<select id="pmCat"></select></label>
+      <p class="stato">Conta il residuo del mese scelto in alto. È solo un'indicazione: non scrive niente.</p>
+    </section>
+    <section class="box"><div id="pmRis" class="gruppo"><p class="vuoto">Scrivi un importo e scegli la categoria.</p></div></section>
   </div>
 
   <div class="due" id="pagHome" hidden>
@@ -382,7 +393,7 @@ function render() {
       : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
   $('etList').innerHTML = [...new Set([...etichette(st.mesi).map(r => r.l), ...(st.cfg.etichette || []).map(x => x?.nome).filter(Boolean)])].map(l => `<option value="${esc(l)}">`).join('');
-  renderForm(); renderCfg(); renderPiano();
+  renderForm(); renderCfg(); renderPiano(); renderPm();
 }
 
 // Form selects: active categories and accounts, plus the ones the movement being edited already has (archived or closed).
@@ -787,17 +798,36 @@ $('pnSalva').addEventListener('click', () => {
   if (scriviCfg({piani: {[st.ym]: p}})) { toast('Piano salvato'); render(); }
 });
 
+// "Can I afford it?" page (logic.js permettermelo): a hint only, it never writes.
+function renderPm() {
+  if (!ready() || $('pagPermettermelo').hidden) return; // pagina() renders it when opened
+  const sel = $('pmCat'), v = sel.value;
+  const nomi = categorieAttive(st.cfg).filter(c => c.budget > 0).map(c => c.nome).sort((a, b) => a.localeCompare(b, 'it'));
+  sel.innerHTML = nomi.map(n => `<option>${esc(n)}</option>`).join(''); if (nomi.includes(v)) sel.value = v;
+  const imp = parseAmount($('pmImporto').value), out = $('pmRis');
+  if (!nomi.length) { out.innerHTML = '<p class="vuoto">Nessuna categoria con budget. Imposta i budget in Categorie.</p>'; return; }
+  if (imp === null) { out.innerHTML = '<p class="vuoto">Scrivi un importo e scegli la categoria.</p>'; return; }
+  const r = window.CSLogic.permettermelo(st.mesi, st.cfg, st.ym, sel.value, imp);
+  if (r.ok) { out.innerHTML = `<div class="hero"><b style="color:var(--ok)">Ci sta</b><span>Ti resta ${eur.format(r.resta)} in ${esc(sel.value)}</span></div>`; return; }
+  const lista = r.proposte.map(p => `<div class="riga"><span class="nome">${esc(p.c)} <small>taglio ${p.taglio}</small></span><span class="res">${eur.format(p.prendi)}</span><span class="det num">residuo ${eur.format(p.residuo)}</span></div>`).join('');
+  out.innerHTML = `<div class="hero"><b style="color:var(--over)">Non ci sta</b><span>Mancano ${eur.format(r.manca)} in ${esc(sel.value)}</span></div>`
+    + (r.proposte.length ? `<h3>Potresti prenderli da</h3>${lista}` : '')
+    + (r.scoperto > 0.005 ? `<p class="stato err">${r.proposte.length ? `Ancora ${eur.format(r.scoperto)} scoperti: le buste con priorità di taglio non bastano.` : 'Nessuna busta con priorità di taglio e residuo positivo.'} Le necessarie non vengono proposte: decidi tu.</p>` : '');
+}
+$('pagPermettermelo').addEventListener('input', renderPm);
+
 // Side menu: the page is the URL hash, so the phone back button works
 $('menuApri').addEventListener('click', () => $('menu').showModal());
 $('menu').addEventListener('click', ev => { if (ev.target === $('menu') || ev.target.closest('a,#menuChiudi')) $('menu').close(); });
 function pagina() {
-  const titoli = {'#categorie': 'Categorie', '#salvadanai': 'Salvadanai', '#piano': 'Piano del mese', '#config': 'Configurazione', '#registro': 'Registro'};
+  const titoli = {'#categorie': 'Categorie', '#salvadanai': 'Salvadanai', '#piano': 'Piano del mese', '#permettermelo': 'Posso permettermelo?', '#config': 'Configurazione', '#registro': 'Registro'};
   const p = titoli[location.hash] ? location.hash : ''; // any other hash is the home
-  $('pagCategorie').hidden = p !== '#categorie'; $('pagConfig').hidden = p !== '#config'; $('pagSalvadanai').hidden = p !== '#salvadanai'; $('pagPiano').hidden = p !== '#piano';
+  $('pagCategorie').hidden = p !== '#categorie'; $('pagConfig').hidden = p !== '#config'; $('pagSalvadanai').hidden = p !== '#salvadanai'; $('pagPiano').hidden = p !== '#piano'; $('pagPermettermelo').hidden = p !== '#permettermelo';
   $('mese').hidden = p === '#categorie' || p === '#config' || p === '#salvadanai';
   $('pagHome').hidden = !!p; $('pagRegistro').hidden = p !== '#registro';
   $('titolo').textContent = titoli[p] || 'Conto Spese';
   if (p === '#piano') { st.pnYm = null; renderPiano(); } // reopen: pick up budgets and pots changed meanwhile (an unsaved draft is dropped)
+  if (p === '#permettermelo') renderPm();
   for (const a of $('menu').querySelectorAll('a')) a.hash === p ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
 }
 addEventListener('hashchange', pagina); pagina();

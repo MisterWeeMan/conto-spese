@@ -192,6 +192,29 @@
     return out;
   }
 
+  // "Can I afford it?" (spec rule 12): would an expense of `importo` in category c fit the residual of month ym?
+  // → {ok, residuo, resta} when it fits (resta = what is left), else {ok:false, residuo, manca, proposte: [{c, taglio, residuo, prendi}], scoperto}.
+  // proposte: other buckets with a taglio and a positive residuo, lowest taglio first, until manca is covered (prendi = how much to
+  // take from each); scoperto = what the proposals still cannot cover. Buckets without a taglio (necessary or out of the ranking)
+  // and pots are never proposed. Writes nothing: it is only a hint. shortcut: a category without budget counts as residuo 0;
+  // a pot as c is not handled (the page offers only categories); the necessary buckets are never proposed, even when scoperto > 0.
+  function permettermelo(mesi, cfg, ym, c, importo) {
+    var r2 = function (x) { return Math.round(x * 100) / 100; }, righe = meseCalc(mesi, cfg, ym).righe;
+    var mia = righe.find(function (r) { return r.c === c; }), residuo = mia ? mia.residuo : 0;
+    if (residuo >= importo - 0.005) return {ok: true, residuo: residuo, resta: r2(residuo - importo)};
+    var manca = r2(importo - residuo), rimane = manca, proposte = [];
+    var tagliabili = (cfg.categorie || []).filter(function (x) { return x.taglio > 0 && x.nome !== c; });
+    righe.map(function (r) { return {r: r, t: tagliabili.find(function (x) { return x.nome === r.c; })}; })
+      .filter(function (x) { return x.t && x.r.residuo > 0; })
+      .sort(function (a, b) { return a.t.taglio - b.t.taglio || a.r.c.localeCompare(b.r.c, 'it'); })
+      .forEach(function (x) {
+        if (rimane <= 0.005) return;
+        var prendi = Math.min(x.r.residuo, rimane); rimane = r2(rimane - prendi);
+        proposte.push({c: x.r.c, taglio: x.t.taglio, residuo: x.r.residuo, prendi: prendi});
+      });
+    return {ok: false, residuo: residuo, manca: manca, proposte: proposte, scoperto: rimane};
+  }
+
   // Quota of a pot voce {nome, annuale, data 'YYYY-MM', cicli?, cambio?: {da 'YYYY-MM', quota}} in month ym. The goal is spread
   // evenly over the months of the current cycle: from the cycle start (the month after the previous due month, or the pot's
   // opening month apertura if later) to the due month included, so 80 due in September seen from January = 80 / 9. After the
@@ -319,7 +342,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, ammanco: ammanco, soglieSuperate: soglieSuperate, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();
