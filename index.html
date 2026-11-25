@@ -138,6 +138,7 @@ details summary{cursor:pointer;font-weight:500}
       <a href="#">Home</a>
       <a href="#registro">Registro</a>
       <a href="#categorie">Categorie</a>
+      <a href="#salvadanai">Salvadanai</a>
       <a href="#config">Configurazione</a>
     </nav>
   </dialog>
@@ -177,6 +178,30 @@ details summary{cursor:pointer;font-weight:500}
         <select id="catOrd" aria-label="Ordina le categorie"><option value="nome">Per nome</option><option value="mov">Per movimenti</option></select>
       </div>
       <div class="lista" id="catLista"><p class="vuoto">Qui compaiono le categorie. Tocca una riga per modificarla.</p></div>
+    </section>
+  </div>
+
+  <div class="due" id="pagSalvadanai" hidden>
+    <section class="box">
+      <h2 id="svTitolo">Nuovo salvadanaio</h2>
+      <form id="svForm" autocomplete="off">
+        <label class="tutta">Nome<input id="svNome" required maxlength="60"></label>
+        <label>Gruppo<select id="svGruppo"><option value="">Nessuno</option><option>Necessarie</option><option>Non necessarie</option><option>Risparmi</option></select></label>
+        <label>Conto<select id="svConto"></select></label>
+        <label>Saldo iniziale (€)<input id="svSaldo" inputmode="decimal" placeholder="0"></label>
+        <label>Saldo iniziale alla data<input id="svData" type="date" required></label>
+        <label class="tutta">Quota mensile (€)<input id="svQuota" inputmode="decimal" placeholder="0"></label>
+        <p class="stato tutta" id="svNota" hidden></p>
+        <div class="azioni tutta">
+          <button class="btn pri" id="svSalva" type="submit">Aggiungi</button>
+          <button class="btn peric" id="svElimina" type="button" hidden>Elimina</button>
+          <button class="btn" id="svAnnulla" type="button" hidden>Annulla</button>
+        </div>
+      </form>
+    </section>
+    <section class="box">
+      <div class="testa"><h2>Salvadanai</h2><span class="stato" id="svConta"></span></div>
+      <div class="lista" id="svLista"><p class="vuoto">Qui compaiono i salvadanai. Tocca una riga per modificarlo.</p></div>
     </section>
   </div>
 
@@ -268,7 +293,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, creditiAperti, meseCalc} = window.CSLogic;
+const {saldoSalvadanaio, ammanco, parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, creditiAperti, meseCalc} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 
 const st = {mesi: {}, cfg: cfgNorm({}), ym: todayISO().slice(0, 7), edit: null, catEdit: null, catInfo: [], q: '', pronto: false, cfgPronto: false};
@@ -315,8 +340,12 @@ function render() {
   }
 
   const anno = todayISO().slice(0, 4);
-  st.catInfo = window.CSLogic.categorie(st.mesi, st.cfg, anno); // sorted by name
+  const tutte = window.CSLogic.categorie(st.mesi, st.cfg, anno); // sorted by name
+  const pots = svLista();
+  st.catInfo = tutte.filter(r => !pots.some(v => v.nome === r.c)); // a pot is not a category: it has its own page
+  st.nSv = Object.fromEntries(tutte.map(r => [r.c, r.n]));
   st.cats = st.catInfo.map(r => r.c);
+  renderSv(pots);
   if (st.pronto) {
     const cq = $('catCerca').value.trim().toLowerCase();
     const cv = st.catInfo.filter(r => r.c.toLowerCase().includes(cq));
@@ -339,7 +368,9 @@ function renderForm() {
     $(id).value = v; if ($(id).selectedIndex < 0) $(id).selectedIndex = 0;
   };
   const piu = (base, ...extra) => [...new Set([...base, ...extra.filter(Boolean)])].map(x => [x]);
-  fill('categoria', piu(categorieAttive(st.cfg).map(c => c.nome).sort((a, b) => a.localeCompare(b, 'it')), e?.c), t === 'u' ? 'Scegli…' : 'Nessuna');
+  // a pot is chosen like a category, only for expenses
+  const nomi = [...categorieAttive(st.cfg).map(c => c.nome), ...(t === 'u' ? svLista().map(v => v.nome) : [])].sort((a, b) => a.localeCompare(b, 'it'));
+  fill('categoria', piu(nomi, e?.c), t === 'u' ? 'Scegli…' : 'Nessuna');
   const conti = contiAttivi(st.cfg).map(c => c.nome);
   fill('conto', piu(t === 'vj' ? conti.filter(k => contoJoint(st.cfg, k)) : conti, e?.k), 'Scegli…');
   fill('contoA', piu(conti, e?.a), 'Scegli…');
@@ -436,6 +467,10 @@ $('form').addEventListener('submit', async ev => {
     m.p = p;
   }
   const ym = m.d.slice(0, 7), id = st.edit?.id || 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  // shortcut: a pot never goes below zero, so an expense above its balance is refused and the user splits it by hand
+  // (the part the pot covers on its name, the rest on another envelope); a picker for the covering envelope can come later.
+  const manca = ammanco(st.mesi, st.cfg, {...m, id});
+  if (manca > 0) return fail(`Il salvadanaio ${c} non basta: mancano ${eur.format(manca)}. Dividi la spesa: la parte che ci sta qui, il resto su un'altra categoria`, 'importo');
   $('salva').disabled = true;
   try {
     // the warning is computed on a copy before the write: it never changes what is written
@@ -538,7 +573,7 @@ $('catForm').addEventListener('submit', ev => {
   const nome = $('catNome').value.trim(), da = st.catEdit;
   if (!nome) { $('catNome').focus(); return; }
   if (!ready()) { toast('Il database non è ancora pronto'); return; }
-  if (st.cats.some(c => c !== da && c.toLowerCase() === nome.toLowerCase())) { toast('Esiste già una categoria con questo nome'); return; }
+  if ([...st.cats, ...svLista().map(v => v.nome)].some(c => c !== da && c.toLowerCase() === nome.toLowerCase())) { toast('Esiste già una categoria o un salvadanaio con questo nome'); return; }
   const bs = $('catBudget').value.trim(), budget = /^0+([.,]0+)?$/.test(bs) || !bs ? 0 : parseAmount(bs), ts = $('catTaglio').value.trim(), taglio = ts ? parseInt(ts, 10) : null;
   if (budget === null || (ts && !(taglio > 0))) { toast('Budget o priorità di taglio non validi'); return; }
   const nuova = {nome, gruppo: $('catGruppo').value, budget, taglio, archiviata: $('catArch').checked};
@@ -575,20 +610,78 @@ $('catLista').addEventListener('click', ev => {
   setCatEdit(b.dataset.cat); render(); $('pagCategorie').scrollIntoView({behavior: 'smooth', block: 'start'});
 });
 
+// Pots page (salvadanai). The whole list is written (merge replaces arrays). Balance shown at the end of the current month.
+// shortcut: fixed monthly quota only (voci come in 2.2); the name is fixed once saved (a rename would have to move the movements).
+function svLista() { return st.cfg.salvadanai || []; }
+const nomeMeseOggi = () => todayISO().slice(0, 7);
+function renderSv(pots) {
+  const oggi = nomeMeseOggi();
+  $('svConta').textContent = `saldo a fine ${new Date(+oggi.slice(0, 4), +oggi.slice(5) - 1, 1).toLocaleDateString('it-IT', {month: 'long'})}`;
+  $('svLista').innerHTML = pots.length ? [...pots].sort((a, b) => a.nome.localeCompare(b.nome, 'it')).map(v => `<button type="button" class="mov cat${st.svEdit === v.nome ? ' sel' : ''}" data-sv="${esc(v.nome)}">
+    <span class="n">${esc(v.nome)}</span><span class="a">${eur.format(saldoSalvadanaio(st.mesi, v, oggi))}</span>
+    <span class="s">${esc(v.gruppo || 'Senza gruppo')} · ${esc(v.conto || 'senza conto')} · quota ${eur.format(v.quota || 0)}/mese</span></button>`).join('')
+    : '<p class="vuoto">Nessun salvadanaio. Aggiungi il primo dal modulo.</p>';
+  const conti = [...new Set([...contiAttivi(st.cfg).map(c => c.nome), svEditConto])].filter(Boolean);
+  const v = $('svConto').value;
+  $('svConto').innerHTML = '<option value="">Scegli…</option>' + conti.map(k => `<option>${esc(k)}</option>`).join('');
+  $('svConto').value = v; if ($('svConto').selectedIndex < 0) $('svConto').selectedIndex = 0;
+}
+let svEditConto = '';
+function setSvEdit(nome) {
+  const v = svLista().find(x => x.nome === nome) || null;
+  st.svEdit = v ? v.nome : null; svEditConto = v?.conto || '';
+  $('svTitolo').textContent = v ? 'Modifica salvadanaio' : 'Nuovo salvadanaio';
+  $('svSalva').textContent = v ? 'Salva modifiche' : 'Aggiungi';
+  $('svElimina').hidden = $('svAnnulla').hidden = !v;
+  $('svElimina').textContent = 'Elimina'; delete $('svElimina').dataset.ok;
+  const n = v ? st.nSv?.[v.nome] || 0 : 0;
+  $('svElimina').disabled = n > 0; $('svNota').hidden = !n;
+  if (n) $('svNota').textContent = `Usato in ${nMov(n)}: per eliminarlo sposta prima quei movimenti su un'altra categoria.`;
+  $('svNome').value = v?.nome || ''; $('svNome').readOnly = !!v;
+  $('svGruppo').value = v?.gruppo || '';
+  $('svSaldo').value = v ? String(v.saldoIniziale?.importo ?? 0).replace('.', ',') : '';
+  $('svData').value = v?.saldoIniziale?.data || todayISO();
+  $('svQuota').value = v ? String(v.quota || 0).replace('.', ',') : '';
+  renderSv(svLista()); $('svConto').value = v?.conto || '';
+}
+const importo0 = s => { s = s.trim(); return !s || /^0+([.,]0+)?$/.test(s) ? 0 : parseAmount(s); };
+$('svForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const nome = $('svNome').value.trim(), da = st.svEdit;
+  if (!nome) { $('svNome').focus(); return; }
+  if (!ready()) { toast('Il database non è ancora pronto'); return; }
+  if (!da && [...st.cats, ...svLista().map(v => v.nome)].some(c => c.toLowerCase() === nome.toLowerCase())) { toast('Esiste già una categoria o un salvadanaio con questo nome'); return; }
+  const importo = importo0($('svSaldo').value), quota = importo0($('svQuota').value), conto = $('svConto').value;
+  if (importo === null || quota === null) { toast('Saldo o quota non validi'); return; }
+  if (!conto) { toast('Scegli il conto del salvadanaio'); $('svConto').focus(); return; }
+  const nuovo = {nome, gruppo: $('svGruppo').value, conto, saldoIniziale: {data: $('svData').value, importo}, quota};
+  if (scriviCfg({salvadanai: [...svLista().filter(v => v.nome !== nome), nuovo]})) { toast(da ? 'Salvadanaio salvato' : `Salvadanaio aggiunto: ${nome}`); setSvEdit(null); render(); }
+});
+$('svElimina').addEventListener('click', () => {
+  const b = $('svElimina'); if (!b.dataset.ok) { b.dataset.ok = 1; b.textContent = 'Conferma eliminazione'; return; }
+  if (scriviCfg({salvadanai: svLista().filter(v => v.nome !== st.svEdit)})) { toast('Salvadanaio eliminato'); setSvEdit(null); render(); }
+});
+$('svAnnulla').addEventListener('click', () => { setSvEdit(null); render(); });
+$('svLista').addEventListener('click', ev => {
+  const b = ev.target.closest('.mov'); if (!b) return;
+  setSvEdit(b.dataset.sv); $('pagSalvadanai').scrollIntoView({behavior: 'smooth', block: 'start'});
+});
+
 // Side menu: the page is the URL hash, so the phone back button works
 $('menuApri').addEventListener('click', () => $('menu').showModal());
 $('menu').addEventListener('click', ev => { if (ev.target === $('menu') || ev.target.closest('a,#menuChiudi')) $('menu').close(); });
 function pagina() {
-  const titoli = {'#categorie': 'Categorie', '#config': 'Configurazione', '#registro': 'Registro'};
+  const titoli = {'#categorie': 'Categorie', '#salvadanai': 'Salvadanai', '#config': 'Configurazione', '#registro': 'Registro'};
   const p = titoli[location.hash] ? location.hash : ''; // any other hash is the home
-  $('pagCategorie').hidden = p !== '#categorie'; $('pagConfig').hidden = p !== '#config'; $('mese').hidden = p === '#categorie' || p === '#config';
+  $('pagCategorie').hidden = p !== '#categorie'; $('pagConfig').hidden = p !== '#config'; $('pagSalvadanai').hidden = p !== '#salvadanai';
+  $('mese').hidden = p === '#categorie' || p === '#config' || p === '#salvadanai';
   $('pagHome').hidden = !!p; $('pagRegistro').hidden = p !== '#registro';
   $('titolo').textContent = titoli[p] || 'Conto Spese';
   for (const a of $('menu').querySelectorAll('a')) a.hash === p ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
 }
 addEventListener('hashchange', pagina); pagina();
 
-setEdit(null); setCatEdit(null); render();
+setEdit(null); setCatEdit(null); setSvEdit(null); render();
 
 // The Firebase config is not a secret: the Firestore rules let everyone read and write only users/<own uid>/...
 // Same Firebase project as one-piece-collection-tracker; this app keeps its data in its own collections.

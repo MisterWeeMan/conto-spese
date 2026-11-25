@@ -275,3 +275,44 @@ test('creditiAperti: the partner share of a Joint expense (it has q) is not a cr
   const m = {'2027-01': {j: {d: '2027-01-05', u: 100, p: 56, q: 56, c: 'Bollette', k: 'Joint'}, s: {d: '2027-01-06', u: 60, p: 20, c: 'Cena', k: 'Cash'}}};
   assert.deepStrictEqual(L.creditiAperti(m).map(x => x.id), ['s']);
 });
+
+const sv = {nome: 'Auto fissi', gruppo: 'Necessarie', conto: 'Revolut', quota: 20, saldoIniziale: {data: '2026-12-01', importo: 100}};
+
+test('saldoSalvadanaio: initial balance + monthly quotas from its month - expenses on that name', () => {
+  const mesi = {'2027-01': {a: {d: '2027-01-10', u: 30, c: 'Auto fissi', k: 'Revolut'}, b: {d: '2027-01-11', u: 99, c: 'Bar'},
+    g: {d: '2027-01-12', u: 5, c: 'Auto fissi', t: 'g', a: 'Cash'}, x: {d: '2027-01-13', u: 7, c: 'Auto fissi', x: 1}}};
+  assert.strictEqual(L.saldoSalvadanaio(mesi, sv, '2026-12'), 120);
+  assert.strictEqual(L.saldoSalvadanaio(mesi, sv, '2027-01'), 110); // 100 + 2 x 20 - 30
+  assert.strictEqual(L.saldoSalvadanaio(mesi, sv, '2026-11'), 100); // before the opening month: no quota yet
+});
+
+test('saldoSalvadanaio: an expense dated before the opening balance is already inside it; split expenses use my part', () => {
+  const mesi = {'2026-12': {o: {d: '2026-11-30', u: 50, c: 'Auto fissi'}, p: {d: '2026-12-05', u: 40, p: 10, c: 'Auto fissi'}}};
+  assert.strictEqual(L.saldoSalvadanaio(mesi, sv, '2026-12'), 110); // 100 + 20 - 10
+});
+
+test('ammanco: how much of an expense the pot cannot cover (the movement itself is left out when edited)', () => {
+  const cfg = {salvadanai: [sv]};
+  const mesi = {'2026-12': {a: {d: '2026-12-10', u: 90, c: 'Auto fissi'}}}; // saldo 120 - 90 = 30
+  assert.strictEqual(L.ammanco(mesi, cfg, {d: '2026-12-15', u: 50, c: 'Auto fissi'}), 20);
+  assert.strictEqual(L.ammanco(mesi, cfg, {d: '2026-12-15', u: 30, c: 'Auto fissi'}), 0);
+  assert.strictEqual(L.ammanco(mesi, cfg, {id: 'a', d: '2026-12-10', u: 120, c: 'Auto fissi'}), 0); // editing a: 120 available
+  assert.strictEqual(L.ammanco(mesi, cfg, {d: '2026-12-15', u: 500, c: 'Bar'}), 0);   // not a pot
+  assert.strictEqual(L.ammanco(mesi, cfg, {d: '2026-12-15', u: 500, c: 'Auto fissi', t: 'g'}), 0);
+  assert.strictEqual(L.ammanco(mesi, cfg, {d: '2026-12-15', u: 50, p: 35, c: 'Auto fissi'}), 5); // my part counts
+});
+
+test('meseCalc: a pot is not a budget: its expenses stay out of senza and spendibile', () => {
+  const cfg = {categorie: [{nome: 'Bar', budget: 100}], salvadanai: [sv]};
+  const mesi = {'2027-01': {a: {d: '2027-01-10', u: 30, c: 'Auto fissi'}, b: {d: '2027-01-11', u: 10, c: 'Bar'}}};
+  const r = L.meseCalc(mesi, cfg, '2027-01');
+  assert.deepStrictEqual(r.senza, []);
+  assert.strictEqual(r.spendibile, 90);
+});
+
+test('ammanco: a backdated expense must not sink a later month of the pot', () => {
+  const cfg = {salvadanai: [{...sv, quota: 0, saldoIniziale: {data: '2027-01-01', importo: 100}}]};
+  const mesi = {'2027-02': {a: {d: '2027-02-10', u: 90, c: 'Auto fissi'}}};
+  assert.strictEqual(L.ammanco(mesi, cfg, {d: '2027-01-15', u: 50, c: 'Auto fissi'}), 40); // February would be at -40
+  assert.strictEqual(L.ammanco(mesi, cfg, {d: '2027-01-15', u: 10, c: 'Auto fissi'}), 0);
+});

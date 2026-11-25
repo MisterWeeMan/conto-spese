@@ -125,6 +125,7 @@
       speso[m.c] = Math.round(((speso[m.c] || 0) + v) * 100) / 100;
     });
     var righe = [], spendibile = 0, conBudget = {};
+    (cfg.salvadanai || []).forEach(function (v) { conBudget[v.nome] = 1; }); // a pot is not a budget: kept out of senza
     (cfg.categorie || []).forEach(function (c) {
       if (c.archiviata || !(c.budget > 0)) return;
       var s = speso[c.nome] || 0, residuo = Math.round((c.budget - s) * 100) / 100;
@@ -149,6 +150,41 @@
       if (s !== undefined && !oltre(prev[r.c], s)) out.push({c: r.c, soglia: s, pct: r.pct});
     });
     return out;
+  }
+
+  // Balance of pot sv ({nome, quota, saldoIniziale: {data, importo}}) at the end of month ym: opening balance + quota for
+  // every month from the opening month to ym (both included) - my part of the expenses with c = sv.nome dated from the
+  // opening date to the end of ym. Rows before the opening date are already inside the opening balance.
+  // shortcut: fixed monthly quota only (voci and quota from goal and date are 2.2); the raw balance is returned, never
+  // clamped: ammanco() keeps it from going below zero at registration.
+  function saldoSalvadanaio(mesi, sv, ym) {
+    var si = sv.saldoIniziale || {data: '0000-01-01', importo: 0}, a = si.data.slice(0, 7);
+    var n = Math.max(0, (+ym.slice(0, 4) - +a.slice(0, 4)) * 12 + (+ym.slice(5) - +a.slice(5)) + 1);
+    var tot = si.importo + n * (sv.quota || 0);
+    Object.keys(mesi).forEach(function (k) {
+      if (k > ym) return;
+      movs(mesi, k).forEach(function (m) { if (m.c === sv.nome && m.d >= si.data) tot -= m.u ? mia(m) : -mia(m); });
+    });
+    return Math.round(tot * 100) / 100;
+  }
+
+  // What a new or edited expense m cannot take from its pot: the deepest shortfall of the balance from m's month to the
+  // last month with data, with m counted (so a backdated expense cannot sink a later month); 0 when m.c is not a pot in
+  // cfg.salvadanai or m is not a plain expense. The movement itself (same id) is replaced by m.
+  function ammanco(mesi, cfg, m) {
+    var v = (cfg.salvadanai || []).find(function (x) { return x.nome === m.c; });
+    if (!v || !(m.u > 0) || m.t) return 0;
+    var da = m.d.slice(0, 7), con = {};
+    Object.keys(mesi).forEach(function (k) { con[k] = Object.assign({}, mesi[k]); if (m.id) delete con[k][m.id]; });
+    con[da] = Object.assign({}, con[da]); con[da][m.id || '_nuovo'] = m;
+    var fine = Object.keys(con).concat(da).sort().pop(), min = 0;
+    for (var y = +da.slice(0, 4), mo = +da.slice(5); ; mo++) {
+      if (mo > 12) { y++; mo = 1; }
+      var k = y + '-' + (mo < 10 ? '0' : '') + mo;
+      if (k > fine) break;
+      min = Math.min(min, saldoSalvadanaio(con, v, k));
+    }
+    return Math.round(-min * 100) / 100 + 0; // + 0: no -0
   }
 
   // Every category: configured (object fields kept) or used by a live movement.
@@ -178,7 +214,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, soglieSuperate: soglieSuperate, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, saldoSalvadanaio: saldoSalvadanaio, ammanco: ammanco, soglieSuperate: soglieSuperate, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();
