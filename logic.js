@@ -92,6 +92,46 @@
     return o;
   }
 
+
+  // Problems of a config before it is loaded (stored shape of spec 'spese_config/main'): list of messages, empty = ok.
+  // Plan rows must name a budget category or a pot. shortcut: no check of amounts against the salary; the plan page shows 'resta'.
+  function validaConfig(c) {
+    var err = [], real = function (s) { return !isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s; }, ym = /^\d{4}-(0[1-9]|1[0-2])$/, day = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+    var gruppi = ['Necessarie', 'Non necessarie', 'Risparmi'], num = function (x) { return typeof x === 'number' && isFinite(x); };
+    var uniq = function (list, what) {
+      var seen = {};
+      (list || []).forEach(function (x) { var k = String(x.nome || '').toLowerCase(); if (!k) err.push(what + ' without name'); else if (seen[k]) err.push('Duplicate ' + what + ' ' + k); seen[k] = 1; });
+    };
+    uniq(c.categorie, 'category'); uniq(c.conti, 'account'); uniq(c.salvadanai, 'pot');
+    uniq((c.categorie || []).concat(c.salvadanai || []), 'category or pot'); // a name must mean one bucket
+    (c.categorie || []).forEach(function (x) {
+      if (x.gruppo && gruppi.indexOf(x.gruppo) < 0) err.push('Group ' + x.gruppo + ' of ' + x.nome + ' is unknown');
+      if (x.budget != null && !(num(x.budget) && x.budget >= 0)) err.push('Budget ' + x.budget + ' of ' + x.nome + ' is not valid');
+    });
+    var conti = (c.conti || []).map(function (x) { return x.nome; });
+    (c.salvadanai || []).forEach(function (v) {
+      if (conti.indexOf(v.conto) < 0) err.push('Account ' + v.conto + ' of pot ' + v.nome + ' does not exist');
+      if (gruppi.indexOf(v.gruppo) < 0) err.push('Group ' + v.gruppo + ' of pot ' + v.nome + ' is unknown');
+      if (!v.saldoIniziale || !day.test(v.saldoIniziale.data) || !real(v.saldoIniziale.data) || !num(v.saldoIniziale.importo)) err.push('Opening balance of pot ' + v.nome + ' is not valid');
+      (v.voci || []).forEach(function (x) {
+        if (!ym.test(x.data || '') || !(x.annuale > 0)) err.push('Voce ' + x.nome + ' date or amount is not valid (pot ' + v.nome + ')');
+        if (x.cambio && !(ym.test(x.cambio.da || '') && num(x.cambio.quota))) err.push('Voce ' + x.nome + ' cambio is not valid');
+      });
+    });
+    (c.quotaJoint || []).forEach(function (q) { if (!day.test(q.da || '') || !real(q.da) || !(q.pct > 0 && q.pct <= 100)) err.push('quotaJoint entry ' + q.da + ' is not valid'); });
+    (c.soglie || []).forEach(function (s) { if (!(s > 0)) err.push('soglie value ' + s + ' is not valid'); });
+    var cat = (c.categorie || []).map(function (x) { return x.nome; });
+    var buste = cat.concat((c.salvadanai || []).map(function (v) { return v.nome; }));
+    (c.etichette || []).forEach(function (l) { if (!l.nome || (l.categoria && buste.indexOf(l.categoria) < 0)) err.push('Label ' + l.nome + ' is not valid'); });
+    Object.keys(c.piani || {}).forEach(function (k) {
+      var p = c.piani[k];
+      if (!ym.test(k)) { err.push('Plan ' + k + ' is not a month'); return; }
+      if (!num(p.stipendio)) err.push('Plan ' + k + ' has no salary');
+      (p.righe || []).forEach(function (r) { if (buste.indexOf(r.nome) < 0 || !num(r.importo)) err.push('Plan ' + k + ' row ' + r.nome + ' is not valid'); });
+    });
+    return err;
+  }
+
   // Accounts that accept new movements (cfg.conti = [{nome, chiuso, ...}], see cfgNorm).
   function contiAttivi(cfg) { return (cfg.conti || []).filter(function (c) { return !c.chiuso; }); }
 
@@ -243,7 +283,7 @@
       g.totale = r2(g.totale + r.importo);
     });
     gruppi.forEach(function (g) { g.pct = stip > 0 ? g.totale / stip : 0; });
-    return {stipendio: stip, righe: righe, gruppi: gruppi, totale: r2(tot), resta: r2(stip - tot), joint: r2(joint)};
+    return {stipendio: stip, righe: righe, gruppi: gruppi, totale: r2(tot), resta: r2(stip - tot) + 0, joint: r2(joint)};
   }
 
   // The latest saved plan before month ym (cfg.piani = {'YYYY-MM': plan}), to start a new month from; {} when there is none.
@@ -279,7 +319,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, ammanco: ammanco, soglieSuperate: soglieSuperate, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, ammanco: ammanco, soglieSuperate: soglieSuperate, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

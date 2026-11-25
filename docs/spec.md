@@ -40,6 +40,7 @@ Regole: un movimento sul Joint ha `u` intero e `p = u × q`. Una spesa divisa co
 - `conti`: lista di `{nome, joint, chiuso, sottosaldi?}`. `joint` = conto comune: le spese su di esso hanno `u` intero con `p` e `q` calcolati dalla quota, e solo su di esso va il versamento della compagna. Un conto chiuso resta nei saldi storici e non accetta movimenti nuovi.
 - `quotaJoint`: lista di `{da, pct}`; vale quella con `da` più recente non successiva alla data del movimento.
 - `soglie`: `[80, 100]`.
+- `etichette`: lista di `{nome, categoria?}`, solo suggerimenti per il campo Etichette (la categoria o il salvadanaio a cui appartengono; senza `categoria` = trasversale, come TCG). Le etichette dei movimenti restano in `l` e compaiono comunque.
 - `obiettivi`: lista di `{nome, attuale, desiderato}` (investimenti, rata auto). Nessuna regola automatica.
 - `fondoEmergenze`: `{conto, sottosaldo, obiettivo}`.
 - `investimenti`: `{versato, valore}`, `valore` aggiornato a mano.

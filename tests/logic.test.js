@@ -405,10 +405,40 @@ test('piano: no salary gives 0% and resta negative; cents do not drift', () => {
   assert.strictEqual(p.resta, -0.3);
 });
 
+test('piano: a plan that uses the whole salary gives resta 0, not -0', () => {
+  assert.ok(Object.is(L.piano({categorie: [{nome: 'A', gruppo: 'Necessarie', budget: 0.1}, {nome: 'B', gruppo: 'Necessarie', budget: 0.2}]}, '2027-01', {stipendio: 0.3}).resta, 0));
+});
+
 test('pianoPrecedente: the latest saved plan before the month, else empty', () => {
   const cfg = {piani: {'2027-01': {stipendio: 1}, '2027-03': {stipendio: 3}}};
   assert.strictEqual(L.pianoPrecedente(cfg, '2027-02').stipendio, 1);
   assert.strictEqual(L.pianoPrecedente(cfg, '2027-03').stipendio, 1);
   assert.strictEqual(L.pianoPrecedente(cfg, '2027-04').stipendio, 3);
   assert.deepStrictEqual(L.pianoPrecedente({}, '2027-01'), {});
+});
+
+const cfgOk = {
+  categorie: [{nome: 'Affitto', gruppo: 'Necessarie', budget: 500, joint: true}, {nome: 'Svago', gruppo: 'Non necessarie', budget: 100, taglio: 1}, {nome: 'Altro'}],
+  conti: [{nome: 'Revolut'}, {nome: 'Joint', joint: true}],
+  quotaJoint: [{da: '2026-01-01', pct: 56}], soglie: [80, 100],
+  etichette: [{nome: 'sushi', categoria: 'Svago'}, {nome: 'TCG'}],
+  salvadanai: [{nome: 'Auto', gruppo: 'Necessarie', conto: 'Revolut', saldoIniziale: {data: '2027-01-01', importo: 5}, voci: [{nome: 'Bollo', annuale: 80, data: '2027-09'}]}],
+  piani: {'2027-01': {stipendio: 1000, righe: [{nome: 'Affitto', importo: 500}, {nome: 'Auto', importo: 9}]}},
+};
+
+test('validaConfig: a coherent config has no problems', () => {
+  assert.deepStrictEqual(L.validaConfig(cfgOk), []);
+});
+
+test('validaConfig: reports duplicates, unknown accounts, bad dates, bad plan rows', () => {
+  const bad = JSON.parse(JSON.stringify(cfgOk));
+  bad.categorie.push({nome: 'affitto', gruppo: 'Boh', budget: -1});
+  bad.salvadanai[0].conto = 'Nessuno'; bad.salvadanai[0].voci[0].data = '2027-13';
+  bad.quotaJoint = [{da: 'ieri', pct: 120}]; bad.soglie = [0]; bad.salvadanai.push({nome: 'Svago', gruppo: 'Risparmi', conto: 'Revolut', saldoIniziale: {data: '2027-02-31', importo: 0}});
+  bad.etichette.push({nome: 'x', categoria: 'Mai'});
+  bad.piani['2027-01'].righe.push({nome: 'Fantasma', importo: 1});
+  bad.piani['gennaio'] = {stipendio: 1, righe: []};
+  const e = L.validaConfig(bad).join('|');
+  for (const parte of ['Duplicate category affitto', 'Group Boh', 'Budget -1', 'Account Nessuno', 'Voce Bollo date', 'quotaJoint', 'soglie', 'Label x', 'Plan 2027-01 row Fantasma', 'Plan gennaio', 'Duplicate category or pot svago', 'Opening balance of pot Svago'])
+    assert.ok(e.includes(parte), parte + ' not reported in: ' + e);
 });

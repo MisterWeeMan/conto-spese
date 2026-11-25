@@ -297,7 +297,7 @@ details summary{cursor:pointer;font-weight:500}
       <div class="lista" id="lista"><p class="vuoto">Qui compaiono i movimenti del mese. Tocca una riga per modificarla.</p></div>
       <details>
         <summary>Importa movimenti da file</summary>
-        <p class="stato">File JSON nel formato di <code>dati/import-2026.json</code>. I movimenti già presenti con lo stesso identificativo vengono sovrascritti, gli altri restano.</p>
+        <p class="stato">File JSON con <code>mesi</code> (movimenti) e/o <code>config</code>, come <code>dati/import-2026.json</code> o <code>dati/config-2027.json</code>. I movimenti già presenti con lo stesso identificativo vengono sovrascritti, gli altri restano. Una configurazione nuova sostituisce le liste di categorie, conti e salvadanai.</p>
         <input id="importa" type="file" accept=".json,application/json" aria-label="File da importare">
       </details>
     </section>
@@ -319,7 +319,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {saldoSalvadanaio, quotaSalvadanaio, ammanco, parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, creditiAperti, meseCalc, piano, pianoPrecedente} = window.CSLogic;
+const {saldoSalvadanaio, quotaSalvadanaio, ammanco, parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, creditiAperti, meseCalc, piano, pianoPrecedente} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 
 const st = {mesi: {}, cfg: cfgNorm({}), ym: todayISO().slice(0, 7), edit: null, catEdit: null, catInfo: [], q: '', pronto: false, cfgPronto: false};
@@ -381,7 +381,7 @@ function render() {
       <span class="n">${esc(r.c)}${r.budget > 0 ? ' · ' + eur.format(r.budget) + '/mese' : ''}${r.archiviata ? ' · archiviata' : ''}</span><span class="a">${r.anno}</span></button>`).join('')
       : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
-  $('etList').innerHTML = etichette(st.mesi).map(r => `<option value="${esc(r.l)}">`).join('');
+  $('etList').innerHTML = [...new Set([...etichette(st.mesi).map(r => r.l), ...(st.cfg.etichette || []).map(x => x?.nome).filter(Boolean)])].map(l => `<option value="${esc(l)}">`).join('');
   renderForm(); renderCfg(); renderPiano();
 }
 
@@ -563,24 +563,30 @@ $('quoteLista').addEventListener('click', ev => {
   scriviCfg({quotaJoint: (st.cfg.quotaJoint || []).filter(q => q.da !== da)});
 });
 
-// The old import file holds names and an annual budget: merge its names into the current lists (arrays are replaced whole)
-// and leave the old fields out, so an import never wipes the budgets, groups and Joint flags set in the page.
+// Import file = {mesi?, config?}. An old file holds names and an annual budget: its names are merged into the current lists
+// (arrays are replaced whole) and the old fields are left out, so an import never wipes the budgets, groups and Joint flags set in the page.
+// A new file holds objects (categorie, conti, salvadanai, quotaJoint, soglie, etichette, piani): lists replace the stored ones, piani merges by month.
 function cfgImport(c) {
   const {budget, gruppi, colori, ...resto} = c, cur = st.cfg;
   const unisci = (now, imp) => [...now, ...(imp || []).map(x => typeof x === 'string' ? x : x.nome).filter(n => !now.some(x => x.nome === n)).map(nome => ({nome}))];
-  return {...resto, categorie: unisci(cur.categorie, c.categorie), conti: unisci(cur.conti, c.conti)};
+  const lista = (now, imp) => !imp ? now : imp.every(x => typeof x === 'object') ? imp : unisci(now, imp);
+  return {...resto, categorie: lista(cur.categorie, c.categorie), conti: lista(cur.conti, c.conti)};
 }
 $('importa').addEventListener('change', async ev => {
   const f = ev.target.files[0]; if (!f || !st.uid) return;
   try {
     const j = JSON.parse(await f.text());
-    if (!j || typeof j.mesi !== 'object') throw new Error('formato non riconosciuto');
-    const mesi = Object.entries(j.mesi).filter(([ym, m]) => /^\d{4}-\d{2}$/.test(ym) && m && typeof m.mov === 'object');
-    const n = mesi.reduce((t, [, m]) => t + Object.keys(m.mov).length, 0);
-    if (confirm(`Importo ${n} movimenti in ${mesi.length} mesi?`)) {
+    if (!j || (typeof j.mesi !== 'object' && typeof j.config !== 'object')) throw new Error('formato non riconosciuto');
+    const mesi = Object.entries(j.mesi || {}).filter(([ym, m]) => /^d{4}-d{2}$/.test(ym) && m && typeof m.mov === 'object');
+    const n = mesi.reduce((t, [, m]) => t + Object.keys(m.mov).length, 0), cfg = j.config && cfgImport(j.config);
+    const prob = cfg ? validaConfig(cfgNorm(j.config)) : [];
+    if (prob.length) throw new Error(prob.slice(0, 3).join('; ') + (prob.length > 3 ? ` (+${prob.length - 3})` : ''));
+    if (!n && !cfg) throw new Error('il file non ha movimenti né configurazione');
+    const cosa = [n && `${n} movimenti in ${mesi.length} mesi`, cfg && 'la configurazione (sostituisce categorie, conti, salvadanai, quota Joint, soglie e piani dei mesi nel file)'].filter(Boolean).join(' e ');
+    if (confirm(`Importo ${cosa}?`)) {
       toast('Importo…');
-      await Promise.all([...mesi.map(([ym, m]) => setDoc(refMese(ym), {mov: m.mov}, {merge: true})), j.config && setDoc(refCfg(), cfgImport(j.config), {merge: true})]);
-      toast(`Importati ${n} movimenti`);
+      await Promise.all([...mesi.map(([ym, m]) => setDoc(refMese(ym), {mov: m.mov}, {merge: true})), cfg && setDoc(refCfg(), cfg, {merge: true})]);
+      toast(n ? `Importati ${n} movimenti` : 'Configurazione importata');
     }
   } catch (err) { toast('Importazione non riuscita: ' + (err?.message || err)); }
   ev.target.value = '';
