@@ -59,7 +59,7 @@ form .tutta{grid-column:1/-1}
 label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 input,select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:16px;width:100%;min-width:0}
 #importo{font-family:var(--mono);font-size:22px;font-weight:600}
-.tipo{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.tipo{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .tipo label{flex-direction:row;justify-content:center;padding:9px;font-size:14px;cursor:pointer;color:var(--ink)}
 .tipo input{position:absolute;opacity:0;width:1px;height:1px}
 .tipo label:has(input:checked){background:var(--accent);color:var(--accent-ink);font-weight:600}
@@ -193,11 +193,13 @@ details summary{cursor:pointer;font-weight:500}
         <div class="tipo tutta" role="radiogroup" aria-label="Tipo di movimento">
           <label><input type="radio" name="tipo" id="tipoU" value="u" checked>Uscita</label>
           <label><input type="radio" name="tipo" id="tipoE" value="e">Entrata</label>
+          <label title="Versamento della compagna sul Joint: conta solo nel saldo del Joint"><input type="radio" name="tipo" id="tipoVJ" value="vj">Compagna</label>
         </div>
         <label class="tutta">Importo (€)<input id="importo" inputmode="decimal" placeholder="0,00" required></label>
         <label>Categoria<input id="categoria" list="catList" placeholder="vuota = giroconto"></label>
         <label>Conto<select id="conto"></select></label>
         <label class="tutta">Nota<input id="nota" placeholder="Es. Spesa, Benzina"></label>
+        <label class="tutta">Etichette<input id="etichette" list="etList" placeholder="Separate da virgola. Es. TCG, Torneo"></label>
         <label class="tutta">Data<input id="data" type="date" required></label>
         <div class="azioni tutta">
           <button class="btn pri" id="salva" type="submit">Aggiungi</button>
@@ -205,12 +207,12 @@ details summary{cursor:pointer;font-weight:500}
           <button class="btn" id="annulla" type="button" hidden>Annulla</button>
         </div>
       </form>
-      <datalist id="catList"></datalist>
+      <datalist id="catList"></datalist><datalist id="etList"></datalist>
     </section>
 
     <section class="box" id="boxMov">
       <div class="testa"><h2>Movimenti</h2><span class="stato" id="movConta"></span></div>
-      <input id="cerca" type="search" placeholder="Cerca per nota, categoria o conto" aria-label="Cerca nei movimenti">
+      <input id="cerca" type="search" placeholder="Cerca nota, conto o #etichetta" aria-label="Cerca nei movimenti">
       <div class="lista" id="lista"><p class="vuoto">Qui compaiono i movimenti del mese. Tocca una riga per modificarla.</p></div>
       <details>
         <summary>Importa movimenti da file</summary>
@@ -236,7 +238,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {parseAmount, net, rinomina} = window.CSLogic;
+const {parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 const calcola = ym => window.CSLogic.calcola(st.mesi, st.cfg, ym);
 
@@ -272,12 +274,13 @@ function render() {
 
     const q = st.q.toLowerCase();
     const tutti = movs(st.ym).sort((a, b) => b.d.localeCompare(a.d) || b.id.localeCompare(a.id));
-    const vis = q ? tutti.filter(m => `${m.n || ''} ${m.c || ''} ${m.k || ''}`.toLowerCase().includes(q)) : tutti;
+    // "#tcg" = only the movements with that label
+    const vis = !q ? tutti : q[0] === '#' ? conEtichetta(tutti, q.slice(1).trim()) : tutti.filter(m => `${m.n || ''} ${m.c || ''} ${m.k || ''}`.toLowerCase().includes(q));
     $('movConta').textContent = q ? `${vis.length} di ${tutti.length}` : `${tutti.length}`;
     $('lista').innerHTML = vis.length ? vis.map(m => `<button type="button" class="mov${st.edit?.id === m.id ? ' sel' : ''}" data-id="${esc(m.id)}">
       <span class="g">${m.d.slice(8)}/${m.d.slice(5, 7)}</span><span class="n">${esc(m.n || m.c || 'Senza nota')}</span>
       <span class="a${net(m) > 0 ? ' pos' : ''}">${eur.format(net(m))}</span>
-      <span class="s">${esc(m.c || 'Giroconto')}${m.k ? ' · ' + esc(m.k) : ''}</span></button>`).join('')
+      <span class="s">${esc(m.c || (m.t === 'vj' ? 'Versamento compagna' : 'Giroconto'))}${m.k ? ' · ' + esc(m.k) : ''}${m.l?.length ? ' · #' + m.l.map(esc).join(' #') : ''}</span></button>`).join('')
       : `<p class="vuoto">${q ? 'Nessun movimento corrisponde alla ricerca.' : `Nessun movimento a ${esc(nome)}. Aggiungi il primo dal modulo.`}</p>`;
   }
 
@@ -294,6 +297,7 @@ function render() {
       : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
   $('catList').innerHTML = st.cats.map(c => `<option value="${esc(c)}">`).join('');
+  $('etList').innerHTML = etichette(st.mesi).map(r => `<option value="${esc(r.l)}">`).join('');
   const conto = $('conto').value || ricorda('conto');
   $('conto').innerHTML = '<option value="">Nessuno</option>' + (st.cfg.conti || []).map(k => `<option>${esc(k)}</option>`).join('');
   $('conto').value = conto || '';
@@ -311,12 +315,13 @@ let tT; function toast(msg) { $('toast').textContent = msg; $('toast').hidden = 
 const errore = e => toast('Non salvato: ' + (e?.code === 'permission-denied' ? 'accesso negato dal database' : e?.message || e?.code || 'errore sconosciuto'));
 
 function setEdit(m) {
-  st.edit = m ? {id: m.id, ym: m.d.slice(0, 7)} : null;
+  st.edit = m ? {id: m.id, ym: m.d.slice(0, 7), t: m.t} : null;
   $('formTitolo').textContent = m ? 'Modifica movimento' : 'Nuovo movimento';
   $('salva').textContent = m ? 'Salva modifiche' : 'Aggiungi';
   $('elimina').hidden = $('annulla').hidden = !m;
   $('elimina').textContent = 'Elimina'; delete $('elimina').dataset.ok;
-  $('tipoE').checked = !!(m && m.e); $('tipoU').checked = !(m && m.e);
+  $('tipoVJ').checked = m?.t === 'vj'; $('tipoE').checked = !!(m && m.e) && m.t !== 'vj'; $('tipoU').checked = !$('tipoVJ').checked && !$('tipoE').checked;
+  $('etichette').value = (m?.l || []).join(', ');
   $('importo').value = m ? String(m.e || m.u || '').replace('.', ',') : '';
   $('categoria').value = m?.c || '';
   $('nota').value = m?.n || '';
@@ -333,9 +338,12 @@ $('form').addEventListener('submit', async ev => {
   const imp = parseAmount($('importo').value);
   if (!imp) { toast('Scrivi un importo maggiore di zero'); $('importo').focus(); return; }
   if (!st.uid || !st.pronto) { toast('Il database non è ancora pronto'); return; }
-  const e = $('tipoE').checked;
-  // tutti i campi sempre presenti: update fonde, quindi un campo omesso terrebbe il valore vecchio
-  const m = {d: $('data').value, n: $('nota').value.trim(), e: e ? imp : 0, u: e ? 0 : imp, c: $('categoria').value.trim(), k: $('conto').value, x: 0};
+  const vj = $('tipoVJ').checked, e = $('tipoE').checked || vj;
+  if (vj && !$('conto').value) { toast('Scegli il conto Joint'); $('conto').focus(); return; }
+  // tutti i campi sempre presenti: update fonde, quindi un campo omesso terrebbe il valore vecchio (l: [] svuota le etichette)
+  // t: vj if chosen, else keep the stored type (g, rb...) of the movement being edited; p, q, a, r are left as stored (merge)
+  const m = {d: $('data').value, n: $('nota').value.trim(), e: e ? imp : 0, u: e ? 0 : imp, c: vj ? '' : $('categoria').value.trim(), k: $('conto').value,
+    l: parseEtichette($('etichette').value), t: vj ? 'vj' : st.edit?.t === 'vj' ? '' : st.edit?.t || '', x: 0};
   const ym = m.d.slice(0, 7), id = st.edit?.id || 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   $('salva').disabled = true;
   try {

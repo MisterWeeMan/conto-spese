@@ -186,3 +186,35 @@ test('calcola leaves refunds out of the month totals', () => {
   const r = L.calcola(split, {budget: {Cena: 1200}}, '2027-02');
   assert.strictEqual(r.ent, 0);
 });
+
+const lab = {'2027-03': {
+  a: {d: '2027-03-01', u: 10, c: 'Cena', k: 'Revolut', l: ['TCG', 'Torneo']},
+  b: {d: '2027-03-02', u: 5, c: 'Cena', k: 'Revolut', l: ['tcg']},
+  c: {d: '2027-03-03', u: 7, c: 'Cena', k: 'Revolut'},
+  d: {d: '2027-03-04', u: 9, c: 'Cena', k: 'Revolut', l: ['Vecchia'], x: 1},
+  j: {d: '2027-03-05', e: 100, k: 'Revolut Joint', t: 'vj'},
+}};
+
+test('parseEtichette splits on commas, trims, drops empties and repeats', () => {
+  assert.deepStrictEqual(L.parseEtichette(' TCG, Torneo ,, tcg ,'), ['TCG', 'Torneo']);
+  assert.deepStrictEqual(L.parseEtichette(''), []);
+});
+
+test('etichette lists the labels in use with their count, ignoring case and deleted movements', () => {
+  assert.deepStrictEqual(L.etichette(lab), [{l: 'TCG', n: 2}, {l: 'Torneo', n: 1}]);
+});
+
+test('conEtichetta keeps the movements that carry the label, ignoring case', () => {
+  const r = L.conEtichetta(L.movs(lab, '2027-03'), 'tcg');
+  assert.deepStrictEqual(r.map(m => m.id), ['a', 'b']);
+});
+
+test('a partner top-up lands only in the Joint balance, not in the totals', () => {
+  assert.strictEqual(L.saldi(lab)['Revolut Joint'], 100);
+  const r = L.calcola(lab, {budget: {Cena: 1200}}, '2027-03');
+  assert.strictEqual(r.ent, 0);
+  assert.strictEqual(L.mia(lab['2027-03'].j), 0);
+  // even with a category by mistake it stays out
+  const m = {'2027-03': {j: {d: '2027-03-05', e: 100, c: 'Cena', k: 'Revolut Joint', t: 'vj'}}};
+  assert.strictEqual(L.calcola(m, {budget: {Cena: 1200}}, '2027-03').ent, 0);
+});

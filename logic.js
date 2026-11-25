@@ -41,6 +41,32 @@
       .map(function (m) { return {id: m.id, d: m.d, c: m.c, k: m.k, n: m.n, residuo: credito(m)}; });
   }
 
+  // "TCG, Torneo,, tcg" -> ['TCG', 'Torneo']: trimmed, no empties, repeats ignoring case dropped
+  function parseEtichette(s) {
+    var seen = {};
+    return String(s || '').split(',').map(function (x) { return x.trim(); }).filter(function (x) {
+      var k = x.toLowerCase(); if (!x || seen[k]) return false; return (seen[k] = 1);
+    });
+  }
+
+  // Labels in use by live movements, [{l, n}] by name; the same label in another case counts as one (first spelling kept).
+  function etichette(mesi) {
+    var n = {}, nome = {};
+    Object.keys(mesi).forEach(function (ym) {
+      movs(mesi, ym).forEach(function (m) {
+        (m.l || []).forEach(function (l) { var k = l.toLowerCase(); nome[k] = nome[k] || l; n[k] = (n[k] || 0) + 1; });
+      });
+    });
+    return Object.keys(n).map(function (k) { return {l: nome[k], n: n[k]}; })
+      .sort(function (a, b) { return a.l.localeCompare(b.l, 'it'); });
+  }
+
+  // The movements carrying label l (ignoring case).
+  function conEtichetta(list, l) {
+    l = String(l).toLowerCase();
+    return list.filter(function (m) { return (m.l || []).some(function (x) { return x.toLowerCase() === l; }); });
+  }
+
   // Joint share (pct) in force on date 'YYYY-MM-DD': the entry with the latest `da` not after it, else null.
   function quotaJoint(cfg, data) {
     var best = null;
@@ -82,7 +108,7 @@
   function calcola(mesi, cfg, ym) {
     var Y = +ym.slice(0, 4), M = +ym.slice(5, 7), ytd = {}, mese = {}, ent = 0, usc = 0;
     for (var i = 1; i <= M; i++) movs(mesi, Y + '-' + pad(i)).forEach(function (m) {
-      if (!m.c || m.t === 'g' || m.t === 'rb') return; // no category (old two-row transfer), t:'g' transfer or t:'rb' refund: left out of totals
+      if (!m.c || m.t === 'g' || m.t === 'rb' || m.t === 'vj') return; // no category (old two-row transfer), transfer, refund or partner top-up: left out of totals
       ytd[m.c] = (ytd[m.c] || 0) + net(m);
       if (i === M) { mese[m.c] = (mese[m.c] || 0) + net(m); ent += m.e || 0; usc += m.u || 0; }
     });
@@ -124,7 +150,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, quotaJoint: quotaJoint, quotaMov: quotaMov, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, calcola: calcola, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, calcola: calcola, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();
