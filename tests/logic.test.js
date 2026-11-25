@@ -155,3 +155,34 @@ test('quotaMov: nothing to apply for other accounts, income, transfers or no sha
   assert.strictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 100, k: 'Joint', t: 'g', a: 'Revolut'}), null);
   assert.strictEqual(L.quotaMov(cfg, {d: '2024-03-01', u: 100, k: 'Joint'}), null);
 });
+
+test('mia: a refund (rb) is not my income', () => {
+  assert.strictEqual(L.mia({t: 'rb', e: 20, r: 'a1'}), 0);
+});
+
+const split = {
+  '2027-01': {a1: {d: '2027-01-05', u: 60, p: 20, c: 'Cena', k: 'Cash'}, a2: {d: '2027-01-06', u: 30, c: 'Cena', k: 'Cash'}},
+  '2027-02': {b1: {d: '2027-02-02', e: 40, t: 'rb', r: 'a1', c: 'Cena', k: 'Cash'}, b2: {d: '2027-02-03', u: 50, p: 10, c: 'Cena', k: 'Cash'}}
+};
+
+test('creditiAperti lists split expenses not yet refunded, with the amount still owed', () => {
+  const r = L.creditiAperti(split);
+  assert.deepStrictEqual(r.map(x => [x.id, x.residuo]), [['b2', 40]]);
+});
+
+test('creditiAperti: a refund closes the whole credit, whatever its amount', () => {
+  const m = JSON.parse(JSON.stringify(split));
+  m['2027-02'].b1.e = 5;
+  assert.deepStrictEqual(L.creditiAperti(m).map(x => x.id), ['b2']);
+});
+
+test('creditiAperti: a deleted refund reopens the credit, a deleted expense is not listed', () => {
+  const m = JSON.parse(JSON.stringify(split));
+  m['2027-02'].b1.x = 1; m['2027-02'].b2.x = 1;
+  assert.deepStrictEqual(L.creditiAperti(m).map(x => x.id), ['a1']);
+});
+
+test('calcola leaves refunds out of the month totals', () => {
+  const r = L.calcola(split, {budget: {Cena: 1200}}, '2027-02');
+  assert.strictEqual(r.ent, 0);
+});

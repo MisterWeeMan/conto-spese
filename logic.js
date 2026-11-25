@@ -22,12 +22,24 @@
   // My part of a movement: p if set, else u (e for income). Transfers (g), partner top-ups (vj)
   // and credits (cr) are not mine.
   function mia(m) {
-    if (m.t === 'g' || m.t === 'vj' || m.t === 'cr') return 0;
+    if (m.t === 'g' || m.t === 'vj' || m.t === 'cr' || m.t === 'rb') return 0;
     return m.p != null ? m.p : (m.u || m.e || 0);
   }
 
   // Money others owe me on a split expense: u - p in cents, never negative; else 0.
   function credito(m) { return m.p != null && m.u ? Math.max(0, Math.round((m.u - m.p) * 100) / 100) : 0; }
+
+  // Open credits over all months: split expenses (u - p > 0) with no live refund pointing at them (t:'rb', r:id).
+  // shortcut: a refund closes the whole credit, whatever its amount (the spec has no partial refunds); upgrade
+  // by summing the refunds' e against `residuo` when partial refunds are needed. Loans (t:'cr') are not listed.
+  function creditiAperti(mesi) {
+    var all = [], chiusi = {};
+    Object.keys(mesi).sort().forEach(function (ym) {
+      movs(mesi, ym).forEach(function (m) { if (m.t === 'rb' && m.r) chiusi[m.r] = 1; else all.push(m); });
+    });
+    return all.filter(function (m) { return !chiusi[m.id] && credito(m) > 0; })
+      .map(function (m) { return {id: m.id, d: m.d, c: m.c, k: m.k, n: m.n, residuo: credito(m)}; });
+  }
 
   // Joint share (pct) in force on date 'YYYY-MM-DD': the entry with the latest `da` not after it, else null.
   function quotaJoint(cfg, data) {
@@ -70,7 +82,7 @@
   function calcola(mesi, cfg, ym) {
     var Y = +ym.slice(0, 4), M = +ym.slice(5, 7), ytd = {}, mese = {}, ent = 0, usc = 0;
     for (var i = 1; i <= M; i++) movs(mesi, Y + '-' + pad(i)).forEach(function (m) {
-      if (!m.c || m.t === 'g') return; // no category (old two-row transfer) or t:'g' = transfer, left out of totals
+      if (!m.c || m.t === 'g' || m.t === 'rb') return; // no category (old two-row transfer), t:'g' transfer or t:'rb' refund: left out of totals
       ytd[m.c] = (ytd[m.c] || 0) + net(m);
       if (i === M) { mese[m.c] = (mese[m.c] || 0) + net(m); ent += m.e || 0; usc += m.u || 0; }
     });
@@ -112,7 +124,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, quotaJoint: quotaJoint, quotaMov: quotaMov, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, calcola: calcola, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, quotaJoint: quotaJoint, quotaMov: quotaMov, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, calcola: calcola, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();
