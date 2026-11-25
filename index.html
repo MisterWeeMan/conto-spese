@@ -59,6 +59,14 @@ form .tutta{grid-column:1/-1}
 label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 input,select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:16px;width:100%;min-width:0}
 #importo{font-family:var(--mono);font-size:22px;font-weight:600}
+.hero{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:2px}
+.hero span{font-size:12px;color:var(--muted)}
+.hero b{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:34px;font-weight:600}
+.grande{display:block;text-align:center;text-decoration:none;font-size:18px;padding:16px}
+input[type=checkbox]{width:auto}
+label.chk{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--ink)}
+.cfriga{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px 14px;align-items:center}
+.cfriga .btn{padding:4px 10px}
 .tipo{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .tipo label{flex-direction:row;justify-content:center;padding:9px;font-size:14px;cursor:pointer;color:var(--ink)}
 .tipo input{position:absolute;opacity:0;width:1px;height:1px}
@@ -127,9 +135,10 @@ details summary{cursor:pointer;font-weight:500}
   <dialog id="menu" aria-label="Menu">
     <nav>
       <button class="ico" id="menuChiudi" type="button" aria-label="Chiudi menu">×</button>
-      <a href="#">Registro</a>
-      <a href="#budget">Budget</a>
+      <a href="#">Home</a>
+      <a href="#registro">Registro</a>
       <a href="#categorie">Categorie</a>
+      <a href="#config">Configurazione</a>
     </nav>
   </dialog>
   <div class="top">
@@ -148,6 +157,10 @@ details summary{cursor:pointer;font-weight:500}
       <h2 id="catTitolo">Nuova categoria</h2>
       <form id="catForm" autocomplete="off">
         <label class="tutta">Nome<input id="catNome" required maxlength="60"></label>
+        <label>Gruppo<select id="catGruppo"><option value="">Nessuno</option><option>Necessarie</option><option>Non necessarie</option><option>Risparmi</option></select></label>
+        <label>Budget mensile (€)<input id="catBudget" inputmode="decimal" placeholder="0 = nessun budget"></label>
+        <label>Priorità di taglio<input id="catTaglio" inputmode="numeric" placeholder="1 = prima da tagliare"></label>
+        <label class="chk"><input type="checkbox" id="catArch">Archiviata</label>
         <label class="tutta" id="catDestBox" hidden>Se la elimini, sposta i movimenti in<select id="catDest"></select></label>
         <p class="stato tutta" id="catNota" hidden></p>
         <div class="azioni tutta">
@@ -167,39 +180,56 @@ details summary{cursor:pointer;font-weight:500}
     </section>
   </div>
 
-  <div class="due" id="pagBudget" hidden>
-    <section class="box" id="boxBudget">
-      <div class="testa"><h2>Budget del mese</h2><span class="stato">residuo = budget cumulato da gennaio − speso</span></div>
+  <div class="due" id="pagHome" hidden>
+    <div class="hero"><span>Spendibile questo mese</span><b id="sSpend">–</b><span id="sDet"></span></div>
+    <a class="btn pri grande" href="#registro">Nuovo movimento</a>
+    <section class="box">
+      <div class="testa"><h2>Categorie del mese</h2><span class="stato">residuo = budget del mese − speso, nessun riporto</span></div>
       <div id="budget"><p class="vuoto">Qui compare quanto resta da spendere per ogni categoria.</p></div>
-      <details id="impostazioni">
-        <summary>Modifica i budget annuali</summary>
-        <div class="imp" id="imp"></div>
-      </details>
+    </section>
+  </div>
+
+  <div class="due" id="pagConfig" hidden>
+    <section class="box">
+      <h2>Conti</h2>
+      <div class="cfriga" id="contiLista"></div>
+      <form id="contoForm" autocomplete="off"><label class="tutta">Nuovo conto<input id="contoNome" maxlength="40" placeholder="Es. Revolut"></label>
+        <label class="chk tutta"><input type="checkbox" id="contoJoint">Conto Joint (spese con quota, versamenti della compagna)</label>
+        <div class="azioni tutta"><button class="btn pri" type="submit">Aggiungi conto</button></div></form>
+    </section>
+    <section class="box">
+      <h2>Quota del Joint</h2>
+      <p class="stato">La mia parte delle spese Joint. Vale dalla data indicata; i movimenti già registrati non cambiano.</p>
+      <div class="cfriga" id="quoteLista"></div>
+      <form id="quotaForm" autocomplete="off">
+        <label>Valida dal<input id="quotaDa" type="date" required></label>
+        <label>Quota (%)<input id="quotaPct" inputmode="decimal" required placeholder="56"></label>
+        <div class="azioni tutta"><button class="btn pri" type="submit">Aggiungi quota</button></div></form>
     </section>
   </div>
 
   <div class="pag" id="pagRegistro">
-  <div class="sintesi">
-    <div><span>Residuo budget</span><b id="sRes">–</b></div>
-    <div><span>Uscite del mese</span><b id="sUsc">–</b></div>
-    <div><span>Entrate del mese</span><b id="sEnt">–</b></div>
-    <div><span>Netto del mese</span><b id="sNet">–</b></div>
-  </div>
-
   <div class="griglia">
     <section class="box" id="boxForm">
       <h2 id="formTitolo">Nuovo movimento</h2>
       <form id="form" autocomplete="off">
         <div class="tipo tutta" role="radiogroup" aria-label="Tipo di movimento">
-          <label><input type="radio" name="tipo" id="tipoU" value="u" checked>Uscita</label>
-          <label><input type="radio" name="tipo" id="tipoE" value="e">Entrata</label>
-          <label title="Versamento della compagna sul Joint: conta solo nel saldo del Joint"><input type="radio" name="tipo" id="tipoVJ" value="vj">Compagna</label>
+          <label><input type="radio" name="tipo" value="u" checked>Spesa</label>
+          <label><input type="radio" name="tipo" value="e">Entrata</label>
+          <label><input type="radio" name="tipo" value="g">Giroconto</label>
+          <label title="Versamento della compagna sul Joint: conta solo nel saldo del Joint"><input type="radio" name="tipo" value="vj">Compagna</label>
+          <label title="Soldi che ho prestato a qualcuno"><input type="radio" name="tipo" value="cr">Credito</label>
+          <label title="Chiude un credito aperto"><input type="radio" name="tipo" value="rb">Rimborso</label>
         </div>
         <label class="tutta">Importo (€)<input id="importo" inputmode="decimal" placeholder="0,00" required></label>
-        <label>Categoria<input id="categoria" list="catList" placeholder="vuota = giroconto"></label>
-        <label>Conto<select id="conto"></select></label>
+        <label data-per="u e">Categoria<select id="categoria"></select></label>
+        <label data-per="u e g vj cr rb" id="contoL">Conto<select id="conto"></select></label>
+        <label data-per="g">Conto di arrivo<select id="contoA"></select></label>
+        <label class="tutta" data-per="rb">Credito che chiude<select id="credito"></select></label>
+        <label class="tutta" data-per="u">La mia parte, se divisa con altri (€)<input id="parte" inputmode="decimal" placeholder="Vuota = tutto mio"></label>
+        <p class="stato tutta" id="jointNota" hidden></p>
         <label class="tutta">Nota<input id="nota" placeholder="Es. Spesa, Benzina"></label>
-        <label class="tutta">Etichette<input id="etichette" list="etList" placeholder="Separate da virgola. Es. TCG, Torneo"></label>
+        <label class="tutta" data-per="u e g cr">Etichette<input id="etichette" list="etList" placeholder="Separate da virgola. Es. TCG, Torneo"></label>
         <label class="tutta">Data<input id="data" type="date" required></label>
         <div class="azioni tutta">
           <button class="btn pri" id="salva" type="submit">Aggiungi</button>
@@ -207,7 +237,7 @@ details summary{cursor:pointer;font-weight:500}
           <button class="btn" id="annulla" type="button" hidden>Annulla</button>
         </div>
       </form>
-      <datalist id="catList"></datalist><datalist id="etList"></datalist>
+      <datalist id="etList"></datalist>
     </section>
 
     <section class="box" id="boxMov">
@@ -230,7 +260,7 @@ details summary{cursor:pointer;font-weight:500}
 // shortcut: Firebase comes from the CDN, so a first visit without network shows only "Carico…"; self-host the SDK if that matters.
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, setDoc, onSnapshot, writeBatch, deleteField } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, setDoc, onSnapshot, writeBatch } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 
 const $ = id => document.getElementById(id);
 const eur = new Intl.NumberFormat('it-IT', {style: 'currency', currency: 'EUR'});
@@ -238,40 +268,40 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta, soglieSuperate} = window.CSLogic;
+const {parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, creditiAperti, meseCalc} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
-const calcola = ym => window.CSLogic.calcola(st.mesi, st.cfg, ym);
 
-const st = {mesi: {}, cfg: {budget: {}, categorie: [], conti: []}, ym: todayISO().slice(0, 7), edit: null, catEdit: null, catInfo: [], q: '', pronto: false};
+const st = {mesi: {}, cfg: cfgNorm({}), ym: todayISO().slice(0, 7), edit: null, catEdit: null, catInfo: [], q: '', pronto: false, cfgPronto: false};
+const ready = () => st.uid && st.pronto && st.cfgPronto;
 const nMov = n => `${n} moviment${n === 1 ? 'o' : 'i'}`;
+const TIPI = {g: 'Giroconto', vj: 'Versamento compagna', cr: 'Credito', rb: 'Rimborso', x2: 'Entrata extra'};
+const tipo = () => document.querySelector('input[name=tipo]:checked').value;
 function rigaBudget(r) {
-  const cls = r.residuo < -0.005 ? 'over' : (r.disp > 0 && r.speso / r.disp > 0.85 ? 'warn' : 'ok');
-  const pct = r.disp > 0 ? Math.min(100, Math.max(0, r.speso / r.disp * 100)) : (r.speso > 0 || r.residuo < 0 ? 100 : 0);
-  return `<div class="riga ${cls}"><span class="nome">${esc(r.c)}${cls === 'over' ? '<span class="pill">sforato</span>' : ''}</span><span class="res">${eur.format(r.residuo)}</span>
-    <div class="barra"><i style="width:${pct.toFixed(1)}%"></i></div>
-    <span class="det num">speso ${eur.format(r.speso)} di ${eur.format(r.disp)} disponibili</span></div>`;
+  const over = r.residuo < -0.005, cls = over ? 'over' : r.pct >= 0.8 ? 'warn' : 'ok';
+  return `<div class="riga ${cls}"><span class="nome">${esc(r.c)}${over ? '<span class="pill">sforato</span>' : ''}</span><span class="res">${eur.format(r.residuo)}</span>
+    <div class="barra"><i style="width:${Math.min(100, Math.max(0, r.pct * 100)).toFixed(1)}%"></i></div>
+    <span class="det num">speso ${eur.format(r.speso)} di ${eur.format(r.budget)} · ${Math.round(r.pct * 100)}%</span></div>`;
 }
 
 function render() {
   const [Y, M] = st.ym.split('-').map(Number);
   const nome = new Date(Y, M - 1, 1).toLocaleDateString('it-IT', {month: 'long', year: 'numeric'});
   $('meseNome').textContent = nome;
-  const {righe, senza, ent, usc} = calcola(st.ym);
-  const tot = righe.reduce((t, r) => ({speso: t.speso + r.speso, disp: t.disp + r.disp, residuo: t.residuo + r.residuo}), {speso: 0, disp: 0, residuo: 0});
-  $('sRes').textContent = st.pronto ? eur.format(tot.residuo) : '–';
-  $('sRes').style.color = tot.residuo < 0 ? 'var(--over)' : 'var(--ok)';
-  $('sUsc').textContent = st.pronto ? eur.format(usc) : '–';
-  $('sEnt').textContent = st.pronto ? eur.format(ent) : '–';
-  $('sNet').textContent = st.pronto ? eur.format(ent - usc) : '–';
+  const ok = st.pronto && st.cfgPronto;
+  const {righe, senza, spendibile} = meseCalc(st.mesi, st.cfg, st.ym);
+  $('sSpend').textContent = ok ? eur.format(spendibile) : '–';
+  $('sSpend').style.color = spendibile < 0 ? 'var(--over)' : 'var(--ok)';
+  const sum = (l, f) => l.reduce((t, r) => t + f(r), 0);
+  $('sDet').textContent = ok ? `Budget ${eur.format(sum(righe, r => r.budget))} · speso ${eur.format(sum(righe, r => r.speso) + sum(senza, r => r.speso))}` : '';
 
-  if (st.pronto) {
+  if (ok) {
     let h = '';
-    if (righe.length) h += `<div class="gruppo">${righe.sort((a, b) => a.c.localeCompare(b.c, 'it')).map(rigaBudget).join('')}</div>
-      <div class="gruppo totale">${rigaBudget({c: 'Totale', ...tot})}</div>`;
-    if (senza.length) h += `<div class="gruppo"><h3>Senza budget, movimenti del mese</h3>${senza.map(([c, v]) => `<div class="riga"><span class="nome">${esc(c)}</span><span class="res">${eur.format(v)}</span></div>`).join('')}</div>`;
-    $('budget').innerHTML = h || '<p class="vuoto">Nessun budget impostato. Aprine uno da "Modifica i budget annuali".</p>';
+    if (righe.length) h += `<div class="gruppo">${righe.sort((a, b) => a.c.localeCompare(b.c, 'it')).map(rigaBudget).join('')}</div>`;
+    if (senza.length) h += `<div class="gruppo"><h3>Senza budget, movimenti del mese</h3>${senza.map(r => `<div class="riga"><span class="nome">${esc(r.c)}</span><span class="res">${eur.format(r.speso)}</span></div>`).join('')}</div>`;
+    $('budget').innerHTML = h || '<p class="vuoto">Nessun budget impostato. Imposta il budget mensile di ogni categoria dalla pagina Categorie.</p>';
     $('budget').className = 'gruppo';
-
+  }
+  if (st.pronto) {
     const q = st.q.toLowerCase();
     const tutti = movs(st.ym).sort((a, b) => b.d.localeCompare(a.d) || b.id.localeCompare(a.id));
     // "#tcg" = only the movements with that label
@@ -280,7 +310,7 @@ function render() {
     $('lista').innerHTML = vis.length ? vis.map(m => `<button type="button" class="mov${st.edit?.id === m.id ? ' sel' : ''}" data-id="${esc(m.id)}">
       <span class="g">${m.d.slice(8)}/${m.d.slice(5, 7)}</span><span class="n">${esc(m.n || m.c || 'Senza nota')}</span>
       <span class="a${net(m) > 0 ? ' pos' : ''}">${eur.format(net(m))}</span>
-      <span class="s">${esc(m.c || (m.t === 'vj' ? 'Versamento compagna' : 'Giroconto'))}${m.k ? ' · ' + esc(m.k) : ''}${m.l?.length ? ' · #' + m.l.map(esc).join(' #') : ''}</span></button>`).join('')
+      <span class="s">${esc(m.c || TIPI[m.t] || 'Senza categoria')}${m.k ? ' · ' + esc(m.k) + (m.t === 'g' && m.a ? ' → ' + esc(m.a) : '') : ''}${m.p != null && m.t !== 'g' ? ' · mia parte ' + eur.format(m.p) : ''}${m.l?.length ? ' · #' + m.l.map(esc).join(' #') : ''}</span></button>`).join('')
       : `<p class="vuoto">${q ? 'Nessun movimento corrisponde alla ricerca.' : `Nessun movimento a ${esc(nome)}. Aggiungi il primo dal modulo.`}</p>`;
   }
 
@@ -293,21 +323,55 @@ function render() {
     if ($('catOrd').value === 'mov') cv.sort((a, b) => b.anno - a.anno); // stable: ties stay by name
     $('catConta').textContent = `${cq ? `${cv.length} di ${st.catInfo.length}` : st.catInfo.length} categorie · movimenti nel ${anno}`;
     $('catLista').innerHTML = cv.length ? cv.map(r => `<button type="button" class="mov cat${st.catEdit === r.c ? ' sel' : ''}" data-cat="${esc(r.c)}">
-      <span class="n">${esc(r.c)}</span><span class="a">${r.anno}</span></button>`).join('')
+      <span class="n">${esc(r.c)}${r.budget > 0 ? ' · ' + eur.format(r.budget) + '/mese' : ''}${r.archiviata ? ' · archiviata' : ''}</span><span class="a">${r.anno}</span></button>`).join('')
       : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
-  $('catList').innerHTML = st.cats.map(c => `<option value="${esc(c)}">`).join('');
   $('etList').innerHTML = etichette(st.mesi).map(r => `<option value="${esc(r.l)}">`).join('');
-  const conto = $('conto').value || ricorda('conto');
-  $('conto').innerHTML = '<option value="">Nessuno</option>' + (st.cfg.conti || []).map(k => `<option>${esc(k)}</option>`).join('');
-  $('conto').value = conto || '';
-  if (!$('imp').contains(document.activeElement)) renderImp();
+  renderForm(); renderCfg();
 }
 
-function renderImp() {
-  if (!$('impostazioni').open) return;
-  $('imp').innerHTML = '<small>Importo annuale in euro; il budget mensile è un dodicesimo. Lascia 0 per togliere il budget.</small>' +
-    (st.cats || []).map((c, i) => `<label for="b${i}" style="color:var(--ink);font-size:14px">${esc(c)}</label><input id="b${i}" inputmode="decimal" data-cat="${esc(c)}" value="${st.cfg.budget?.[c] || 0}">`).join('');
+// Form selects: active categories and accounts, plus the ones the movement being edited already has (archived or closed).
+function renderForm() {
+  const t = tipo(), e = st.edit;
+  const fill = (id, vals, vuoto) => {
+    const v = $(id).value;
+    $(id).innerHTML = `<option value="">${vuoto}</option>` + vals.map(([x, l]) => `<option value="${esc(x)}">${esc(l || x)}</option>`).join('');
+    $(id).value = v; if ($(id).selectedIndex < 0) $(id).selectedIndex = 0;
+  };
+  const piu = (base, ...extra) => [...new Set([...base, ...extra.filter(Boolean)])].map(x => [x]);
+  fill('categoria', piu(categorieAttive(st.cfg).map(c => c.nome).sort((a, b) => a.localeCompare(b, 'it')), e?.c), t === 'u' ? 'Scegli…' : 'Nessuna');
+  const conti = contiAttivi(st.cfg).map(c => c.nome);
+  fill('conto', piu(t === 'vj' ? conti.filter(k => contoJoint(st.cfg, k)) : conti, e?.k), 'Scegli…');
+  fill('contoA', piu(conti, e?.a), 'Scegli…');
+  const aperti = creditiAperti(st.mesi);
+  st.cred = Object.fromEntries(aperti.map(c => [c.id, c.residuo]));
+  fill('credito', [...aperti.map(c => [c.id, `${c.d.slice(8)}/${c.d.slice(5, 7)} · ${c.n || c.c || 'senza nota'} · ${eur.format(c.residuo)}`]),
+    ...(e?.r && !st.cred[e.r] ? [[e.r, 'Credito già scelto']] : [])], 'Scegli…');
+  if (!e && !$('conto').value) $('conto').value = ricorda('conto') || '';
+  aggiorna();
+}
+
+// show only the fields of the chosen type; Joint note and split field depend on the account
+function aggiorna() {
+  const t = tipo(), joint = t === 'u' && contoJoint(st.cfg, $('conto').value);
+  for (const el of $('form').querySelectorAll('[data-per]')) el.hidden = !el.dataset.per.split(' ').includes(t);
+  $('parte').parentElement.hidden = t !== 'u' || joint;
+  $('jointNota').hidden = !joint;
+  if (joint) {
+    const r = quotaMov(st.cfg, {d: $('data').value, u: parseAmount($('importo').value) || 0, k: $('conto').value}, qFissa());
+    $('jointNota').textContent = r ? `Conto Joint: quota ${r.q}%, la mia parte è ${eur.format(r.p)}.` : 'Conto Joint senza una quota valida a questa data: impostala in Configurazione.';
+  }
+}
+// editing keeps the share stored on the movement, as long as its date does not change
+const qFissa = () => st.edit?.q != null && st.edit.d === $('data').value ? st.edit.q : undefined;
+
+function renderCfg() {
+  const r = [...st.cfg.quotaJoint || []].sort((a, b) => b.da.localeCompare(a.da));
+  $('contiLista').innerHTML = st.cfg.conti.length ? st.cfg.conti.map((c, i) => `<span>${esc(c.nome)}</span>
+    <label class="chk"><input type="checkbox" data-conto="${i}" data-f="joint"${c.joint ? ' checked' : ''}>Joint</label>
+    <label class="chk"><input type="checkbox" data-conto="${i}" data-f="chiuso"${c.chiuso ? ' checked' : ''}>Chiuso</label>`).join('') : '<p class="vuoto">Nessun conto: aggiungine uno per poter registrare.</p>';
+  $('quoteLista').innerHTML = r.length ? r.map(q => `<span>dal ${q.da.split('-').reverse().join('/')}</span><b class="num">${esc(q.pct)}%</b>
+    <button class="btn peric" type="button" data-da="${esc(q.da)}" aria-label="Togli la quota del ${esc(q.da)}">×</button>`).join('') : '<p class="vuoto">Nessuna quota: senza, le spese Joint non si possono registrare.</p>';
 }
 
 function ricorda(k, v) { try { if (v === undefined) return localStorage.getItem('cs.' + k); localStorage.setItem('cs.' + k, v); } catch { return null; } }
@@ -315,46 +379,73 @@ let tT; function toast(msg, ms = 2600) { $('toast').textContent = msg; $('toast'
 const errore = e => toast('Non salvato: ' + (e?.code === 'permission-denied' ? 'accesso negato dal database' : e?.message || e?.code || 'errore sconosciuto'));
 
 function setEdit(m) {
-  st.edit = m ? {id: m.id, ym: m.d.slice(0, 7), t: m.t} : null;
+  st.edit = m ? {id: m.id, ym: m.d.slice(0, 7), t: m.t, q: m.q, d: m.d, c: m.c, k: m.k, a: m.a, r: m.r} : null;
   $('formTitolo').textContent = m ? 'Modifica movimento' : 'Nuovo movimento';
   $('salva').textContent = m ? 'Salva modifiche' : 'Aggiungi';
   $('elimina').hidden = $('annulla').hidden = !m;
   $('elimina').textContent = 'Elimina'; delete $('elimina').dataset.ok;
-  $('tipoVJ').checked = m?.t === 'vj'; $('tipoE').checked = !!(m && m.e) && m.t !== 'vj'; $('tipoU').checked = !$('tipoVJ').checked && !$('tipoE').checked;
+  const t = !m ? 'u' : TIPI[m.t] && m.t !== 'x2' ? m.t : m.e ? 'e' : 'u';
+  document.querySelector(`input[name=tipo][value=${t}]`).checked = true;
   $('etichette').value = (m?.l || []).join(', ');
   $('importo').value = m ? String(m.e || m.u || '').replace('.', ',') : '';
-  $('categoria').value = m?.c || '';
   $('nota').value = m?.n || '';
   $('data').value = m?.d || todayISO();
-  if (m) $('conto').value = m.k || '';
+  $('parte').value = m && m.p != null && !contoJoint(st.cfg, m.k) ? String(m.p).replace('.', ',') : '';
+  renderForm(); // options first (they include the movement's own category and accounts), then the values
+  $('categoria').value = m?.c || '';
+  $('conto').value = m ? m.k || '' : ricorda('conto') || '';
+  $('contoA').value = m?.a || ''; $('credito').value = m?.r || '';
+  aggiorna();
 }
 
 // Not awaited: without network the promise settles only when the connection is back; the list updates at once from the local cache.
 // merge:true touches only this movement and creates the month if missing.
 const scrivi = (ym, id, corpo) => setDoc(refMese(ym), {mov: {[id]: corpo}}, {merge: true}).catch(errore);
 
+$('form').addEventListener('input', ev => {
+  if (ev.target.id === 'credito' && ev.target.value && !$('importo').value) $('importo').value = String(st.cred[ev.target.value]).replace('.', ',');
+  aggiorna();
+});
+$('form').addEventListener('change', ev => { if (ev.target.name === 'tipo') renderForm(); });
+
 $('form').addEventListener('submit', async ev => {
   ev.preventDefault();
-  const imp = parseAmount($('importo').value);
-  if (!imp) { toast('Scrivi un importo maggiore di zero'); $('importo').focus(); return; }
-  if (!st.uid || !st.pronto) { toast('Il database non è ancora pronto'); return; }
-  const vj = $('tipoVJ').checked, e = $('tipoE').checked || vj;
-  if (vj && !$('conto').value) { toast('Scegli il conto Joint'); $('conto').focus(); return; }
-  // tutti i campi sempre presenti: update fonde, quindi un campo omesso terrebbe il valore vecchio (l: [] svuota le etichette)
-  // t: vj if chosen, else keep the stored type (g, rb...) of the movement being edited; p, q, a, r are left as stored (merge)
-  const m = {d: $('data').value, n: $('nota').value.trim(), e: e ? imp : 0, u: e ? 0 : imp, c: vj ? '' : $('categoria').value.trim(), k: $('conto').value,
-    l: parseEtichette($('etichette').value), t: vj ? 'vj' : st.edit?.t === 'vj' ? '' : st.edit?.t || '', x: 0};
+  const imp = parseAmount($('importo').value), t = tipo();
+  const fail = (msg, id) => { toast(msg); $(id).focus(); };
+  if (!imp) return fail('Scrivi un importo maggiore di zero', 'importo');
+  if (!ready()) { toast('Il database non è ancora pronto'); return; }
+  const k = $('conto').value, c = t === 'u' || t === 'e' ? $('categoria').value : '', entra = t === 'e' || t === 'vj' || t === 'rb';
+  if (!k) return fail('Scegli il conto', 'conto');
+  if (t === 'u' && !c) return fail('Scegli la categoria', 'categoria');
+  if (t === 'vj' && !contoJoint(st.cfg, k)) return fail('Il versamento della compagna va su un conto Joint: segnalalo in Configurazione', 'conto');
+  const a = t === 'g' ? $('contoA').value : '', r = t === 'rb' ? $('credito').value : '';
+  if (t === 'g' && (!a || a === k)) return fail('Scegli due conti diversi', 'contoA');
+  if (t === 'rb' && !r) return fail('Scegli il credito che chiude', 'credito');
+  // tutti i campi sempre presenti (p, q, a, r, l, t...): la scrittura fonde, quindi un campo omesso terrebbe il valore vecchio
+  // t: normal rows are '' (a stored extra income x2 stays x2); the other types come from the choice
+  const m = {d: $('data').value, n: $('nota').value.trim(), e: entra ? imp : 0, u: entra ? 0 : imp, c, k, a, r, p: null, q: null,
+    l: $('etichette').closest('[data-per]').hidden ? [] : parseEtichette($('etichette').value),
+    t: t === 'u' || t === 'e' ? (t === 'e' && st.edit?.t === 'x2' ? 'x2' : '') : t, x: 0};
+  if (t === 'u' && contoJoint(st.cfg, k)) {
+    const jq = quotaMov(st.cfg, m, qFissa());
+    if (!jq) return fail('Nessuna quota del Joint valida a questa data: impostala in Configurazione', 'data');
+    Object.assign(m, jq);
+  } else if (t === 'u' && $('parte').value.trim()) {
+    const v = $('parte').value.trim(), p = /^0+([.,]0+)?$/.test(v) ? 0 : parseAmount(v);
+    if (p === null || p >= imp) return fail('La mia parte deve essere minore dell\'importo', 'parte');
+    m.p = p;
+  }
   const ym = m.d.slice(0, 7), id = st.edit?.id || 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   $('salva').disabled = true;
   try {
     // the warning is computed on a copy before the write: it never changes what is written
     const dopo = {...st.mesi, [ym]: {...st.mesi[ym], [id]: {...st.mesi[ym]?.[id], ...m}}};
-    const avvisi = m.u && m.c ? soglieSuperate(st.mesi, dopo, st.cfg, ym).filter(a => a.c === m.c) : [];
+    const avvisi = t === 'u' ? soglieSuperate(st.mesi, dopo, st.cfg, ym).filter(x => x.c === m.c) : [];
     scrivi(ym, id, m);
     if (st.edit && st.edit.ym !== ym) scrivi(st.edit.ym, id, {x: 1});
     ricorda('conto', m.k);
     toast((st.edit ? 'Modifiche salvate' : `Aggiunto: ${eur.format(net(m))}${m.c ? ' · ' + m.c : ''}`) +
-      avvisi.map(a => ` — Attenzione: ${a.c} al ${Math.round(a.pct * 100)}% del budget (soglia ${a.soglia}%)`).join(''), avvisi.length ? 6000 : 2600);
+      avvisi.map(x => ` — Attenzione: ${x.c} al ${Math.round(x.pct * 100)}% del budget (soglia ${x.soglia}%)`).join(''), avvisi.length ? 6000 : 2600);
     if (ym !== st.ym) st.ym = ym;
     setEdit(null); render(); $('importo').focus();
   } catch (err) { errore(err); }
@@ -376,17 +467,37 @@ $('cerca').addEventListener('input', ev => { st.q = ev.target.value; render(); }
 const sposta = n => { const [Y, M] = st.ym.split('-').map(Number), d = new Date(Y, M - 1 + n, 1); st.ym = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; setEdit(null); render(); };
 $('prec').addEventListener('click', () => sposta(-1));
 $('succ').addEventListener('click', () => sposta(1));
-$('impostazioni').addEventListener('toggle', renderImp);
-$('imp').addEventListener('change', async ev => {
-  const c = ev.target.dataset.cat; if (!c || !st.uid) return;
-  const v = ev.target.value.trim() === '' || ev.target.value.trim() === '0' ? 0 : parseAmount(ev.target.value);
-  if (v === null) { toast('Importo non valido'); return; }
-  try {
-    setDoc(refCfg(), {budget: {[c]: v}}, {merge: true}).catch(errore);
-    toast(`Budget ${c}: ${eur.format(v)} all'anno`);
-  } catch (err) { errore(err); }
+// Configuration: accounts and Joint share. Whole lists are written (merge replaces arrays); never before the config has loaded.
+const scriviCfg = corpo => { if (!ready()) { toast('Il database non è ancora pronto'); return false; } setDoc(refCfg(), corpo, {merge: true}).catch(errore); return true; };
+$('contiLista').addEventListener('change', ev => {
+  const i = ev.target.dataset.conto; if (i === undefined) return;
+  scriviCfg({conti: st.cfg.conti.map((c, j) => j === +i ? {...c, [ev.target.dataset.f]: ev.target.checked} : c)});
+});
+$('contoForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const nome = $('contoNome').value.trim();
+  if (!nome) { $('contoNome').focus(); return; }
+  if (st.cfg.conti.some(c => c.nome.toLowerCase() === nome.toLowerCase())) { toast('Esiste già un conto con questo nome'); return; }
+  if (scriviCfg({conti: [...st.cfg.conti, {nome, joint: $('contoJoint').checked, chiuso: false}]})) { toast('Conto aggiunto: ' + nome); $('contoForm').reset(); }
+});
+$('quotaForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const da = $('quotaDa').value, pct = parseAmount($('quotaPct').value);
+  if (!da || !pct || pct > 100) { toast('Scrivi una quota tra 0 e 100'); $('quotaPct').focus(); return; }
+  if (scriviCfg({quotaJoint: [...(st.cfg.quotaJoint || []).filter(q => q.da !== da), {da, pct}]})) { toast('Quota salvata'); $('quotaForm').reset(); }
+});
+$('quoteLista').addEventListener('click', ev => {
+  const da = ev.target.dataset.da; if (!da) return;
+  scriviCfg({quotaJoint: (st.cfg.quotaJoint || []).filter(q => q.da !== da)});
 });
 
+// The old import file holds names and an annual budget: merge its names into the current lists (arrays are replaced whole)
+// and leave the old fields out, so an import never wipes the budgets, groups and Joint flags set in the page.
+function cfgImport(c) {
+  const {budget, gruppi, colori, ...resto} = c, cur = st.cfg;
+  const unisci = (now, imp) => [...now, ...(imp || []).map(x => typeof x === 'string' ? x : x.nome).filter(n => !now.some(x => x.nome === n)).map(nome => ({nome}))];
+  return {...resto, categorie: unisci(cur.categorie, c.categorie), conti: unisci(cur.conti, c.conti)};
+}
 $('importa').addEventListener('change', async ev => {
   const f = ev.target.files[0]; if (!f || !st.uid) return;
   try {
@@ -396,7 +507,7 @@ $('importa').addEventListener('change', async ev => {
     const n = mesi.reduce((t, [, m]) => t + Object.keys(m.mov).length, 0);
     if (confirm(`Importo ${n} movimenti in ${mesi.length} mesi?`)) {
       toast('Importo…');
-      await Promise.all([...mesi.map(([ym, m]) => setDoc(refMese(ym), {mov: m.mov}, {merge: true})), j.config && setDoc(refCfg(), j.config, {merge: true})]);
+      await Promise.all([...mesi.map(([ym, m]) => setDoc(refMese(ym), {mov: m.mov}, {merge: true})), j.config && setDoc(refCfg(), cfgImport(j.config), {merge: true})]);
       toast(`Importati ${n} movimenti`);
     }
   } catch (err) { toast('Importazione non riuscita: ' + (err?.message || err)); }
@@ -419,20 +530,23 @@ function setCatEdit(c) {
   // no default destination: the user must pick it, a merge of two categories cannot be undone
   $('catDest').innerHTML = '<option value="">Scegli…</option>' + altre.map(c => `<option>${esc(c)}</option>`).join('');
   $('catNome').value = r ? r.c : '';
+  $('catGruppo').value = r?.gruppo || ''; $('catBudget').value = r?.budget > 0 ? String(r.budget).replace('.', ',') : '';
+  $('catTaglio').value = r?.taglio ?? ''; $('catArch').checked = !!r?.archiviata;
 }
 $('catForm').addEventListener('submit', ev => {
   ev.preventDefault();
   const nome = $('catNome').value.trim(), da = st.catEdit;
   if (!nome) { $('catNome').focus(); return; }
-  if (!st.uid || !st.pronto) { toast('Il database non è ancora pronto'); return; }
+  if (!ready()) { toast('Il database non è ancora pronto'); return; }
   if (st.cats.some(c => c !== da && c.toLowerCase() === nome.toLowerCase())) { toast('Esiste già una categoria con questo nome'); return; }
-  const cfg = {categorie: [...(st.cfg.categorie || []).filter(c => c !== da && c !== nome), nome]};
+  const bs = $('catBudget').value.trim(), budget = /^0+([.,]0+)?$/.test(bs) || !bs ? 0 : parseAmount(bs), ts = $('catTaglio').value.trim(), taglio = ts ? parseInt(ts, 10) : null;
+  if (budget === null || (ts && !(taglio > 0))) { toast('Budget o priorità di taglio non validi'); return; }
+  const nuova = {nome, gruppo: $('catGruppo').value, budget, taglio, archiviata: $('catArch').checked};
+  const cfg = {categorie: [...st.cfg.categorie.filter(c => c.nome !== da && c.nome !== nome), nuova]};
   // one batch: a rename must not stay half done between the movements and the config
   const batch = writeBatch(db);
   let n = 0;
   if (da && da !== nome) {
-    cfg.budget = {[da]: deleteField()};
-    if (st.cfg.budget?.[da]) cfg.budget[nome] = st.cfg.budget[da];
     for (const [ym, mov] of Object.entries(rinomina(st.mesi, da, nome))) { batch.set(refMese(ym), {mov}, {merge: true}); n += Object.keys(mov).length; }
   }
   batch.set(refCfg(), cfg, {merge: true});
@@ -449,7 +563,7 @@ $('catElimina').addEventListener('click', () => {
   const batch = writeBatch(db);
   let n = 0;
   for (const [ym, mov] of patch) { batch.set(refMese(ym), {mov}, {merge: true}); n += Object.keys(mov).length; }
-  batch.set(refCfg(), {categorie: (st.cfg.categorie || []).filter(x => x !== c), budget: {[c]: deleteField()}}, {merge: true});
+  batch.set(refCfg(), {categorie: st.cfg.categorie.filter(x => x.nome !== c)}, {merge: true});
   batch.commit().catch(errore); // not awaited, same reason as scrivi
   toast(n ? `Categoria eliminata, ${nMov(n)} spostat${n === 1 ? 'o' : 'i'} in ${a}` : 'Categoria eliminata'); setCatEdit(null); render();
 });
@@ -465,10 +579,10 @@ $('catLista').addEventListener('click', ev => {
 $('menuApri').addEventListener('click', () => $('menu').showModal());
 $('menu').addEventListener('click', ev => { if (ev.target === $('menu') || ev.target.closest('a,#menuChiudi')) $('menu').close(); });
 function pagina() {
-  const titoli = {'#categorie': 'Categorie', '#budget': 'Budget'};
-  const p = titoli[location.hash] ? location.hash : ''; // any other hash is the ledger
-  $('pagCategorie').hidden = p !== '#categorie'; $('mese').hidden = p === '#categorie'; // the month matters for ledger and budget
-  $('pagBudget').hidden = p !== '#budget'; $('pagRegistro').hidden = !!p;
+  const titoli = {'#categorie': 'Categorie', '#config': 'Configurazione', '#registro': 'Registro'};
+  const p = titoli[location.hash] ? location.hash : ''; // any other hash is the home
+  $('pagCategorie').hidden = p !== '#categorie'; $('pagConfig').hidden = p !== '#config'; $('mese').hidden = p === '#categorie' || p === '#config';
+  $('pagHome').hidden = !!p; $('pagRegistro').hidden = p !== '#registro';
   $('titolo').textContent = titoli[p] || 'Conto Spese';
   for (const a of $('menu').querySelectorAll('a')) a.hash === p ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
 }
@@ -499,7 +613,7 @@ $('logout').addEventListener('click', () => signOut(auth));
 
 onAuthStateChanged(auth, user => {
   stop.forEach(f => f()); stop = [];
-  Object.assign(st, {uid: user?.uid || null, pronto: false, mesi: {}, cfg: {budget: {}, categorie: [], conti: []}});
+  Object.assign(st, {uid: user?.uid || null, pronto: false, cfgPronto: false, mesi: {}, cfg: cfgNorm({})});
   $('gate').hidden = !!user; $('app').hidden = !user;
   $('login').disabled = false; $('gateMsg').textContent = 'Accedi con il tuo account Google per usare l\'app.';
   if (!user) return;
@@ -515,8 +629,8 @@ onAuthStateChanged(auth, user => {
     stato.hidden = !snap.metadata.fromCache;
     render();
   }, fine));
-  // shortcut: one budget set for all years; split by year when 2027 has different figures
-  stop.push(onSnapshot(refCfg(), snap => { if (snap.exists()) { st.cfg = {budget: {}, categorie: [], conti: [], ...snap.data()}; render(); } }, fine));
+  // shortcut: one config for all years (monthly budgets, Joint share by date); split by year if budgets differ
+  stop.push(onSnapshot(refCfg(), snap => { st.cfg = cfgNorm(snap.exists() ? snap.data() : {}); st.cfgPronto = true; render(); }, fine));
 });
 </script>
 </body>

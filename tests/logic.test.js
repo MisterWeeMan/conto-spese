@@ -16,48 +16,12 @@ test('movs skips deleted movements', () => {
   assert.deepStrictEqual(L.movs(mesi, '2026-01').map(m => m.id), ['a']);
 });
 
-test('calcola carries the unspent budget over to the next months', () => {
-  const mesi = {
-    '2026-01': {a: {d: '2026-01-05', u: 62.69, c: 'Abbonamenti'}},
-    '2026-02': {b: {d: '2026-02-03', u: 10, c: 'Abbonamenti'}, t: {d: '2026-02-04', u: 500, c: ''}, s: {d: '2026-02-09', e: 2000, c: 'Stipendio'}}
-  };
-  const cfg = {budget: {Abbonamenti: 480}, gruppi: {Abbonamenti: 'Spese fisse'}};
-  const gen = L.calcola(mesi, cfg, '2026-01').righe[0];
-  assert.ok(Math.abs(gen.residuo - (40 - 62.69)) < 0.005);
-  const feb = L.calcola(mesi, cfg, '2026-02');
-  assert.ok(Math.abs(feb.righe[0].residuo - (80 - 72.69)) < 0.005); // 2 months of budget minus spent since January
-  assert.ok(Math.abs(feb.righe[0].disp - (80 - 62.69)) < 0.005);    // available this month
-  assert.ok(!('g' in feb.righe[0])); // groups are gone: the old stored gruppi field is ignored
-  assert.strictEqual(feb.usc, 10);   // the transfer without category is left out
-  assert.strictEqual(feb.ent, 2000);
-  assert.deepStrictEqual(feb.senza, [['Stipendio', 2000]]);
-});
-
-test('categorie merges configured, budgeted and used categories, counting live movements overall and in the given year', () => {
-  const mesi = {
-    '2025-12': {z: {d: '2025-12-01', u: 1, c: 'Bar'}},
-    '2026-01': {a: {d: '2026-01-05', u: 10, c: 'Bar'}, b: {d: '2026-01-06', u: 5, c: 'Bar', x: 1}, t: {d: '2026-01-07', u: 50, c: ''}},
-    '2026-02': {c: {d: '2026-02-01', u: 3, c: 'Bar'}}
-  };
-  const cfg = {categorie: ['Zoo'], budget: {Affitto: 1200, Vecchia: 0}, gruppi: {Affitto: 'Spese fisse'}, colori: {Bar: '#aa3300'}};
-  assert.deepStrictEqual(L.categorie(mesi, cfg, '2026'), [
-    {c: 'Affitto', n: 0, anno: 0},
-    {c: 'Bar', n: 3, anno: 2},
-    {c: 'Zoo', n: 0, anno: 0}
-  ]);
-});
-
 test('rinomina patches only the live movements of that category', () => {
   const mesi = {
     '2026-01': {a: {d: '2026-01-05', u: 10, c: 'Bar'}, b: {d: '2026-01-06', u: 5, c: 'Bar', x: 1}, o: {d: '2026-01-07', u: 1, c: 'Cibo'}},
     '2026-02': {c: {d: '2026-02-01', u: 3, c: 'Cibo'}}
   };
   assert.deepStrictEqual(L.rinomina(mesi, 'Bar', 'Caffè'), {'2026-01': {a: {c: 'Caffè'}}});
-});
-
-test('calcola does not carry over across years', () => {
-  const mesi = {'2025-12': {a: {d: '2025-12-05', u: 999, c: 'Bar'}}};
-  assert.strictEqual(L.calcola(mesi, {budget: {Bar: 120}}, '2026-01').righe[0].residuo, 10);
 });
 
 test('mia: a Joint expense counts only my share', () => {
@@ -133,29 +97,6 @@ test('saldi: the old two-row transfer reads as before; deleted rows are ignored'
   assert.deepStrictEqual(L.saldi(mesi), {Banca: -50, Cassa: 50});
 });
 
-test('calcola leaves a transfer out of every total, even with a category by mistake', () => {
-  const mesi = {'2026-03': {g: {d: '2026-03-03', u: 200, k: 'Banca', a: 'Cassa', t: 'g', c: 'Spesa'}}};
-  const r = L.calcola(mesi, {budget: {Spesa: 120}}, '2026-03');
-  assert.strictEqual(r.usc, 0);
-  assert.ok(r.righe[0].speso === 0); // === so that -0 passes
-  assert.deepStrictEqual(r.senza, []);
-});
-
-test('quotaMov: a Joint expense keeps u whole and gets p and q from the share in force on its date', () => {
-  const cfg = {quotaJoint: [{da: '2025-01-01', pct: 56}, {da: '2027-01-01', pct: 50}]};
-  assert.deepStrictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 100, k: 'Revolut Joint'}), {p: 56, q: 56});
-  assert.deepStrictEqual(L.quotaMov(cfg, {d: '2027-03-01', u: 100, k: 'Revolut Joint'}), {p: 50, q: 50});
-  assert.deepStrictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 33.33, k: 'Joint'}), {p: 18.66, q: 56}); // rounded to the cent
-});
-
-test('quotaMov: nothing to apply for other accounts, income, transfers or no share in force', () => {
-  const cfg = {quotaJoint: [{da: '2025-01-01', pct: 56}]};
-  assert.strictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 100, k: 'Revolut'}), null);
-  assert.strictEqual(L.quotaMov(cfg, {d: '2026-03-01', e: 100, k: 'Joint'}), null);
-  assert.strictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 100, k: 'Joint', t: 'g', a: 'Revolut'}), null);
-  assert.strictEqual(L.quotaMov(cfg, {d: '2024-03-01', u: 100, k: 'Joint'}), null);
-});
-
 test('mia: a refund (rb) is not my income', () => {
   assert.strictEqual(L.mia({t: 'rb', e: 20, r: 'a1'}), 0);
 });
@@ -182,11 +123,6 @@ test('creditiAperti: a deleted refund reopens the credit, a deleted expense is n
   assert.deepStrictEqual(L.creditiAperti(m).map(x => x.id), ['a1']);
 });
 
-test('calcola leaves refunds out of the month totals', () => {
-  const r = L.calcola(split, {budget: {Cena: 1200}}, '2027-02');
-  assert.strictEqual(r.ent, 0);
-});
-
 const lab = {'2027-03': {
   a: {d: '2027-03-01', u: 10, c: 'Cena', k: 'Revolut', l: ['TCG', 'Torneo']},
   b: {d: '2027-03-02', u: 5, c: 'Cena', k: 'Revolut', l: ['tcg']},
@@ -211,12 +147,7 @@ test('conEtichetta keeps the movements that carry the label, ignoring case', () 
 
 test('a partner top-up lands only in the Joint balance, not in the totals', () => {
   assert.strictEqual(L.saldi(lab)['Revolut Joint'], 100);
-  const r = L.calcola(lab, {budget: {Cena: 1200}}, '2027-03');
-  assert.strictEqual(r.ent, 0);
   assert.strictEqual(L.mia(lab['2027-03'].j), 0);
-  // even with a category by mistake it stays out
-  const m = {'2027-03': {j: {d: '2027-03-05', e: 100, c: 'Cena', k: 'Revolut Joint', t: 'vj'}}};
-  assert.strictEqual(L.calcola(m, {budget: {Cena: 1200}}, '2027-03').ent, 0);
 });
 
 test('mia: an extra income (x2) is not mine', () => {
@@ -295,4 +226,52 @@ test('soglieSuperate: no budget, no warning; cfg.soglie overrides the default', 
 test('soglieSuperate: an edit is before vs after of the same id; a lower amount never warns', () => {
   assert.deepStrictEqual(sup(mm(90), mm(70)), []);
   assert.deepStrictEqual(sup(mm(50), mm(85)), [{c: 'Svago', soglia: 80, pct: 0.85}]);
+});
+
+test('contoJoint reads the joint flag of the account, not its name', () => {
+  const cfg = {conti: [{nome: 'Revolut Joint'}, {nome: 'Cassa', joint: true}]};
+  assert.strictEqual(L.contoJoint(cfg, 'Cassa'), true);
+  assert.strictEqual(L.contoJoint(cfg, 'Revolut Joint'), false);
+  assert.strictEqual(L.contoJoint(cfg, 'Altro'), false);
+});
+
+test('quotaMov: a flagged account gets p and q, an unflagged one with Joint in the name does not', () => {
+  const cfg = {quotaJoint: [{da: '2025-01-01', pct: 56}], conti: [{nome: 'Cassa', joint: true}, {nome: 'Revolut Joint'}]};
+  assert.deepStrictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 100, k: 'Cassa'}), {p: 56, q: 56});
+  assert.strictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 100, k: 'Revolut Joint'}), null);
+});
+
+test('quotaMov: a stored share q wins over the one in force', () => {
+  const cfg = {quotaJoint: [{da: '2025-01-01', pct: 60}], conti: [{nome: 'Cassa', joint: true}]};
+  assert.deepStrictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 50, k: 'Cassa'}, 56), {p: 28, q: 56});
+});
+
+test('cfgNorm turns the stored lists of strings into objects and keeps the rest', () => {
+  const r = L.cfgNorm({categorie: ['Bar', {nome: 'Zoo', budget: 5}], conti: ['Cassa', {nome: 'J', joint: true}], budget: {Bar: 1200}});
+  assert.deepStrictEqual(r.categorie, [{nome: 'Bar'}, {nome: 'Zoo', budget: 5}]);
+  assert.deepStrictEqual(r.conti, [{nome: 'Cassa'}, {nome: 'J', joint: true}]);
+  assert.deepStrictEqual(L.cfgNorm({}), {categorie: [], conti: []});
+});
+
+test('categorie: configured objects keep their fields, used names are added, counts as before', () => {
+  const mesi = {'2026-01': {a: {d: '2026-01-05', u: 10, c: 'Bar'}, t: {d: '2026-01-07', u: 50, c: ''}}, '2025-02': {b: {d: '2025-02-01', u: 1, c: 'Bar'}}};
+  const cfg = {categorie: [{nome: 'Zoo', gruppo: 'Necessarie', budget: 9}]};
+  assert.deepStrictEqual(L.categorie(mesi, cfg, '2026'), [
+    {c: 'Bar', nome: 'Bar', n: 2, anno: 1},
+    {c: 'Zoo', nome: 'Zoo', gruppo: 'Necessarie', budget: 9, n: 0, anno: 0}
+  ]);
+});
+
+test('quotaMov: nothing to apply for other accounts, income, transfers or no share in force', () => {
+  const cfg = {quotaJoint: [{da: '2025-01-01', pct: 56}], conti: [{nome: 'Joint', joint: true}, {nome: 'Revolut'}]};
+  assert.deepStrictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 33.33, k: 'Joint'}), {p: 18.66, q: 56}); // rounded to the cent
+  assert.strictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 100, k: 'Revolut'}), null);
+  assert.strictEqual(L.quotaMov(cfg, {d: '2026-03-01', e: 100, k: 'Joint'}), null);
+  assert.strictEqual(L.quotaMov(cfg, {d: '2026-03-01', u: 100, k: 'Joint', t: 'g', a: 'Revolut'}), null);
+  assert.strictEqual(L.quotaMov(cfg, {d: '2024-03-01', u: 100, k: 'Joint'}), null);
+});
+
+test('creditiAperti: the partner share of a Joint expense (it has q) is not a credit to refund', () => {
+  const m = {'2027-01': {j: {d: '2027-01-05', u: 100, p: 56, q: 56, c: 'Bollette', k: 'Joint'}, s: {d: '2027-01-06', u: 60, p: 20, c: 'Cena', k: 'Cash'}}};
+  assert.deepStrictEqual(L.creditiAperti(m).map(x => x.id), ['s']);
 });

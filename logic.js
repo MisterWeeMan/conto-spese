@@ -1,6 +1,5 @@
 // Pure logic: no DOM, no Firestore. Loaded by index.html (window.CSLogic) and by the tests (require).
 (function () {
-  var pad = function (n) { return String(n).padStart(2, '0'); };
 
   // "12,50" / "12.50" / "1.234,56" -> euro; null when it is not a positive amount
   function parseAmount(s) {
@@ -31,13 +30,14 @@
 
   // Open credits over all months: split expenses (u - p > 0) with no live refund pointing at them (t:'rb', r:id).
   // shortcut: a refund closes the whole credit, whatever its amount (the spec has no partial refunds); upgrade
-  // by summing the refunds' e against `residuo` when partial refunds are needed. Loans (t:'cr') are not listed.
+  // by summing the refunds' e against `residuo` when partial refunds are needed. Loans (t:'cr') are not listed;
+  // a Joint expense (q set) is not either: the rest of it is the partner's share, already paid from the Joint account.
   function creditiAperti(mesi) {
     var all = [], chiusi = {};
     Object.keys(mesi).sort().forEach(function (ym) {
       movs(mesi, ym).forEach(function (m) { if (m.t === 'rb' && m.r) chiusi[m.r] = 1; else all.push(m); });
     });
-    return all.filter(function (m) { return !chiusi[m.id] && credito(m) > 0; })
+    return all.filter(function (m) { return !chiusi[m.id] && m.q == null && credito(m) > 0; })
       .map(function (m) { return {id: m.id, d: m.d, c: m.c, k: m.k, n: m.n, residuo: credito(m)}; });
   }
 
@@ -74,20 +74,28 @@
     return best ? best.pct : null;
   }
 
-  // {p, q} to store on a new expense on the Joint account: q = share in force on m.d, p = u x q to the cent;
-  // u stays whole. null when nothing applies. shortcut: Joint = account whose name contains 'joint', the
-  // config has no flag for it yet; revisit when the new cfg.conti is wired (1.7).
-  function quotaMov(cfg, m) {
-    var q = m.u > 0 && !m.t && /joint/i.test(m.k || '') ? quotaJoint(cfg, m.d) : null;
+  // True when the account named k carries the joint flag in cfg.conti.
+  function contoJoint(cfg, k) { return (cfg.conti || []).some(function (c) { return c.nome === k && !!c.joint; }); }
+
+  // {p, q} to store on an expense on a Joint account: q = the stored share if given, else the one in force on m.d;
+  // p = u x q to the cent; u stays whole. null when nothing applies (not Joint, not a plain expense, no share).
+  function quotaMov(cfg, m, qFissa) {
+    var q = m.u > 0 && !m.t && contoJoint(cfg, m.k) ? (qFissa != null ? qFissa : quotaJoint(cfg, m.d)) : null;
     return q == null ? null : {p: Math.round(m.u * q) / 100, q: q};
   }
 
-  // Accounts that accept new movements. shortcut: reads the new cfg.conti ({nome, chiuso}); the stored
-  // config is still a list of strings until the migration.
+  // Stored config -> the shape the page uses: categories and accounts as objects (older data holds plain names).
+  // The old annual `budget`, `gruppi` and `colori` fields pass through untouched and are ignored.
+  function cfgNorm(raw) {
+    var o = Object.assign({}, raw), obj = function (x) { return typeof x === 'string' ? {nome: x} : x; };
+    o.categorie = (o.categorie || []).map(obj); o.conti = (o.conti || []).map(obj);
+    return o;
+  }
+
+  // Accounts that accept new movements (cfg.conti = [{nome, chiuso, ...}], see cfgNorm).
   function contiAttivi(cfg) { return (cfg.conti || []).filter(function (c) { return !c.chiuso; }); }
 
-  // Categories open to new movements, with their gruppo. shortcut: new cfg.categorie ({nome, gruppo, ...});
-  // not the same as categorie() below, which still reads the old list of strings.
+  // Categories open to new movements, with their gruppo (cfg.categorie = [{nome, gruppo, ...}], see cfgNorm).
   function categorieAttive(cfg) { return (cfg.categorie || []).filter(function (c) { return !c.archiviata; }); }
 
   // Balance per account over all months. A transfer (t:'g') moves u from k to a; every other row moves k by e - u,
@@ -101,25 +109,6 @@
       });
     });
     return s;
-  }
-
-  // Same rule as the sheet's Budget tab: what was not spent (or overspent) in the
-  // previous months of the year carries over. residuo = annual/12 * month + net YTD.
-  function calcola(mesi, cfg, ym) {
-    var Y = +ym.slice(0, 4), M = +ym.slice(5, 7), ytd = {}, mese = {}, ent = 0, usc = 0;
-    for (var i = 1; i <= M; i++) movs(mesi, Y + '-' + pad(i)).forEach(function (m) {
-      if (!m.c || m.t === 'g' || m.t === 'rb' || m.t === 'vj') return; // no category (old two-row transfer), transfer, refund or partner top-up: left out of totals
-      ytd[m.c] = (ytd[m.c] || 0) + net(m);
-      if (i === M) { mese[m.c] = (mese[m.c] || 0) + net(m); ent += m.e || 0; usc += m.u || 0; }
-    });
-    var budget = cfg.budget || {};
-    var righe = Object.entries(budget).filter(function (p) { return p[1] > 0; }).map(function (p) {
-      var c = p[0], speso = -(mese[c] || 0), residuo = p[1] / 12 * M + (ytd[c] || 0);
-      return {c: c, speso: speso, disp: residuo + speso, residuo: residuo};
-    });
-    var senza = Object.entries(mese).filter(function (p) { return !(budget[p[0]] > 0); })
-      .sort(function (a, b) { return a[1] - b[1]; });
-    return {righe: righe, senza: senza, ent: ent, usc: usc};
   }
 
   // Month figures with MONTHLY budgets, no carry-over (spec rules 2-4). cfg.categorie = [{nome, gruppo, budget, archiviata}];
@@ -162,21 +151,20 @@
     return out;
   }
 
-  // Every category: configured, with a budget, or used by a live movement.
+  // Every category: configured (object fields kept) or used by a live movement.
   // n = live movements using it, anno = those in the given year ('YYYY').
   function categorie(mesi, cfg, anno) {
-    var n = {}, na = {}, budget = cfg.budget || {};
-    (cfg.categorie || []).forEach(function (c) { n[c] = 0; });
-    Object.keys(budget).forEach(function (c) { if (budget[c] > 0) n[c] = 0; });
+    var info = {};
+    var get = function (nome) { return info[nome] = info[nome] || {c: nome, nome: nome, n: 0, anno: 0}; };
+    (cfg.categorie || []).forEach(function (c) { Object.assign(get(c.nome), c); });
     Object.keys(mesi).forEach(function (ym) {
       movs(mesi, ym).forEach(function (m) {
         if (!m.c) return;
-        n[m.c] = (n[m.c] || 0) + 1;
-        if (ym.slice(0, 4) === String(anno)) na[m.c] = (na[m.c] || 0) + 1;
+        var r = get(m.c); r.n++;
+        if (ym.slice(0, 4) === String(anno)) r.anno++;
       });
     });
-    return Object.keys(n).sort(function (a, b) { return a.localeCompare(b, 'it'); })
-      .map(function (c) { return {c: c, n: n[c], anno: na[c] || 0}; });
+    return Object.keys(info).sort(function (a, b) { return a.localeCompare(b, 'it'); }).map(function (k) { return info[k]; });
   }
 
   // Per-month merge patch that moves the live movements of category da to a: {ym: {id: {c: a}}}
@@ -190,7 +178,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, calcola: calcola, meseCalc: meseCalc, soglieSuperate: soglieSuperate, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, soglieSuperate: soglieSuperate, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

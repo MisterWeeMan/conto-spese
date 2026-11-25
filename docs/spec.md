@@ -37,7 +37,7 @@ Regole: un movimento sul Joint ha `u` intero e `p = u × q`. Una spesa divisa co
 
 - `categorie`: lista di `{nome, gruppo, budget, joint, taglio, archiviata}`. `budget` è **mensile** (oggi il campo `budget` è annuale e sparisce). `joint` = la spesa passa dal Joint alla quota. `taglio` = priorità di taglio (solo non necessarie).
 - `salvadanai`: lista di `{nome, gruppo, conto, voci: [{nome, annuale, data, cicli?}], quota?, saldoIniziale: {data, importo}, sottosaldo?}`. La quota mensile è la somma delle voci o un valore fisso.
-- `conti`: lista di `{nome, chiuso, sottosaldi?}`. Un conto chiuso resta nei saldi storici e non accetta movimenti nuovi.
+- `conti`: lista di `{nome, joint, chiuso, sottosaldi?}`. `joint` = conto comune: le spese su di esso hanno `u` intero con `p` e `q` calcolati dalla quota, e solo su di esso va il versamento della compagna. Un conto chiuso resta nei saldi storici e non accetta movimenti nuovi.
 - `quotaJoint`: lista di `{da, pct}`; vale quella con `da` più recente non successiva alla data del movimento.
 - `soglie`: `[80, 100]`.
 - `obiettivi`: lista di `{nome, attuale, desiderato}` (investimenti, rata auto). Nessuna regola automatica.
