@@ -709,3 +709,60 @@ test('destinazioneExtra: an income in the category Vendita carte goes to the TCG
   assert.strictEqual(L.destinazioneExtra({}, altro, {d: '2027-02-03', e: 30, c: 'Incassi TCG'}).b, 'Fondo TCG');
   assert.strictEqual(L.destinazioneExtra({}, altro, {d: '2027-02-03', e: 30, c: 'Vendita carte'}).b, 'Cuscinetto');
 });
+
+// ---- 3.1 Controllo saldi (made-up data) ----
+const cfgC = {conti: [
+  {nome: 'Banca', saldoIniziale: {data: '2026-11-10', importo: 1000}},
+  {nome: 'Cassa'}, {nome: 'Joint', joint: true}, {nome: 'Vecchio', chiuso: true, saldoIniziale: {data: '2026-01-01', importo: 50}}]};
+const mesiC = {'2026-11': {
+  a: {d: '2026-11-05', u: 999, c: 'X', k: 'Banca'},            // before the opening date: already in the opening balance
+  b: {d: '2026-11-12', u: 30, c: 'X', k: 'Banca'},
+  c: {d: '2026-11-15', u: 100, t: 'g', k: 'Banca', a: 'Cassa'},
+  d: {d: '2026-11-20', u: 200, c: 'X', k: 'Joint', p: 112, q: 56},  // Joint: the whole amount moves the account
+  e: {d: '2026-11-21', e: 300, t: 'vj', k: 'Joint'},               // partner top-up
+  f: {d: '2026-11-28', u: 5, c: 'X', k: 'Cassa'}}};
+
+test('saldi with cfg: opening balance per account, only rows from its date, Joint at full amounts', () => {
+  assert.deepStrictEqual(L.saldi(mesiC, cfgC),
+    {Banca: 870, Cassa: 95, Joint: 100, Vecchio: 50});
+});
+
+test('saldi with a date: rows after it are left out (balance as of today)', () => {
+  assert.strictEqual(L.saldi(mesiC, cfgC, '2026-11-14').Banca, 970);
+  assert.strictEqual(L.saldi(mesiC, cfgC, '2026-11-14').Cassa, 0);
+});
+
+test('validaImporto neg: signed balance, zero allowed, empty and junk rejected', () => {
+  assert.deepStrictEqual(L.validaImporto('-12,50', {neg: true}), {v: -12.5});
+  assert.deepStrictEqual(L.validaImporto('0', {neg: true}), {v: 0});
+  assert.deepStrictEqual(L.validaImporto('1200', {neg: true}), {v: 1200});
+  assert.ok(L.validaImporto('', {neg: true}).err);
+  assert.ok(L.validaImporto('-', {neg: true}).err);
+  assert.ok(L.validaImporto('--5', {neg: true}).err);
+  assert.ok(L.validaImporto('-5', {}).err); // without neg a minus stays an error
+});
+
+test('differenzaControllo: bank minus tool, ok within a cent', () => {
+  assert.deepStrictEqual(L.differenzaControllo(870, 850.5), {diff: 19.5, ok: false});
+  assert.deepStrictEqual(L.differenzaControllo(870, 870), {diff: 0, ok: true});
+});
+
+test('controlli: last check, history, and "late" after 7 days; closed accounts are not asked', () => {
+  const cfg = {conti: cfgC.conti, controlli: [
+    {d: '2026-11-01', k: 'Banca', banca: 1, strumento: 1, diff: 0},
+    {d: '2026-11-20', k: 'Banca', banca: 5, strumento: 4, diff: 1},
+    {d: '2026-11-19', k: 'Cassa', banca: 0, strumento: 0, diff: 0}]};
+  assert.strictEqual(L.ultimoControllo(cfg, 'Banca').d, '2026-11-20');
+  assert.deepStrictEqual(L.storicoControlli(cfg, 'Banca', 5).map(c => c.d), ['2026-11-20', '2026-11-01']);
+  assert.strictEqual(L.controlloScaduto(cfg, 'Banca', '2026-11-27'), false); // 7 days: still ok
+  assert.strictEqual(L.controlloScaduto(cfg, 'Banca', '2026-11-28'), true);
+  assert.strictEqual(L.controlloScaduto(cfg, 'Joint', '2026-11-28'), true);  // never checked
+  assert.deepStrictEqual(L.controlliInRitardo(cfg, '2026-11-28'), ['Banca', 'Cassa', 'Joint']); // Vecchio is closed
+});
+
+test('validaConfig: opening balance of an account and the checks must be valid', () => {
+  const base = {conti: [{nome: 'A', saldoIniziale: {data: '2026-11-10', importo: -5}}], controlli: [{d: '2026-11-20', k: 'A', banca: 1, strumento: 1, diff: 0}]};
+  assert.deepStrictEqual(L.validaConfig(base), []);
+  assert.ok(L.validaConfig({...base, conti: [{nome: 'A', saldoIniziale: {data: 'x', importo: 1}}]}).length);
+  assert.ok(L.validaConfig({...base, controlli: [{d: '2026-11-20', k: 'Z', banca: 1, strumento: 1, diff: 0}]}).length);
+});

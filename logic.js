@@ -15,6 +15,11 @@
   function validaImporto(s, opts) {
     s = String(s).trim();
     var zero = opts && opts.zero;
+    if (opts && opts.neg) { // signed balance (bank check): optional leading minus, zero allowed, empty not
+      var neg = /^[-−]/.test(s), r = neg ? validaImporto(s.slice(1), {zero: true}) : validaImporto(s, {zero: true});
+      if (!s || (neg && !s.slice(1).trim())) return {err: 'Scrivi un importo'};
+      return r.err ? r : {v: neg && r.v ? -r.v : r.v};
+    }
     if (!s) return zero ? {v: 0} : {err: 'Scrivi un importo'};
     if (/[.,].*[.,]/.test(s)) return {err: 'Un solo separatore decimale, niente separatore delle migliaia: scrivi 1200 oppure 1200,50'};
     var m = /^(\d+)(?:[.,](\d+))?$/.exec(s);
@@ -142,6 +147,13 @@
         if (x.cambio && !(ym.test(x.cambio.da || '') && num(x.cambio.quota))) err.push('Voce ' + x.nome + ' cambio is not valid');
       });
     });
+    (c.conti || []).forEach(function (x) {
+      var s = x.saldoIniziale;
+      if (s && (!day.test(s.data || '') || !real(s.data) || !num(s.importo))) err.push('Opening balance of account ' + x.nome + ' is not valid');
+    });
+    (c.controlli || []).forEach(function (x) {
+      if (!day.test(x.d || '') || !real(x.d) || conti.indexOf(x.k) < 0 || !num(x.banca) || !num(x.strumento) || !num(x.diff)) err.push('Check ' + x.d + ' ' + x.k + ' is not valid');
+    });
     var fe = c.fondoEmergenze;
     if (fe && !(c.salvadanai || []).some(function (v) { return v.nome === fe.sottosaldo; })) err.push('fondoEmergenze: pot ' + fe.sottosaldo + ' does not exist');
     if (fe && fe.obiettivo != null && !(num(fe.obiettivo) && fe.obiettivo >= 0)) err.push('fondoEmergenze: goal is not valid');
@@ -176,16 +188,43 @@
   }
 
   // Balance per account over all months. A transfer (t:'g') moves u from k to a; every other row moves k by e - u,
-  // so the old two-row transfer still reads right. shortcut: no opening balances, rows without k count under ''.
-  function saldi(mesi) {
-    var s = {};
-    function add(k, v) { s[k || ''] = Math.round(((s[k || ''] || 0) + v) * 100) / 100; }
+  // so the old two-row transfer still reads right. On the Joint it is the real account balance (whole amounts, partner
+  // top-ups), not my share. cfg (optional): an account with saldoIniziale {data, importo} starts from it and counts only
+  // rows dated from that day on (earlier rows are inside it); every account of cfg appears (0 without rows), a closed one keeps its historical balance.
+  // finoA (optional 'YYYY-MM-DD'): rows after it are left out (balance as of that day).
+  // shortcut: rows without k count under ''.
+  function saldi(mesi, cfg, finoA) {
+    var s = {}, si = {};
+    (cfg && cfg.conti || []).forEach(function (c) { si[c.nome] = c.saldoIniziale; s[c.nome] = c.saldoIniziale ? c.saldoIniziale.importo : 0; });
+    function add(k, v, d) {
+      if (si[k] && d < si[k].data) return;
+      s[k || ''] = Math.round(((s[k || ''] || 0) + v) * 100) / 100;
+    }
     Object.keys(mesi).forEach(function (ym) {
       movs(mesi, ym).forEach(function (m) {
-        if (m.t === 'g') { add(m.k, -(m.u || 0)); add(m.a, m.u || 0); } else add(m.k, net(m));
+        if (finoA && m.d > finoA) return;
+        if (m.t === 'g') { add(m.k, -(m.u || 0), m.d); add(m.a, m.u || 0, m.d); } else add(m.k, net(m), m.d);
       });
     });
     return s;
+  }
+
+  // Bank check (spec 'controlli'): difference = bank balance - tool balance; ok within a cent. No correcting movement is
+  // ever created: the difference only says a movement is probably missing.
+  function differenzaControllo(banca, strumento) {
+    var diff = Math.round((banca - strumento) * 100) / 100;
+    return {diff: diff, ok: Math.abs(diff) < 0.005};
+  }
+  function storicoControlli(cfg, k, n) {
+    return (cfg.controlli || []).filter(function (c) { return c.k === k; }).sort(function (a, b) { return b.d < a.d ? -1 : b.d > a.d ? 1 : 0; }).slice(0, n || 5);
+  }
+  function ultimoControllo(cfg, k) { return storicoControlli(cfg, k, 1)[0] || null; }
+  function giorniTra(a, b) { return Math.round((Date.UTC(+b.slice(0, 4), +b.slice(5, 7) - 1, +b.slice(8)) - Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, +a.slice(8))) / 864e5); }
+  // True when account k was never checked or its last check is more than 7 days before oggi.
+  function controlloScaduto(cfg, k, oggi) { var u = ultimoControllo(cfg, k); return !u || giorniTra(u.d, oggi) > 7; }
+  // Open accounts whose check is late (closed accounts are not asked for new checks).
+  function controlliInRitardo(cfg, oggi) {
+    return (cfg.conti || []).filter(function (c) { return !c.chiuso && controlloScaduto(cfg, c.nome, oggi); }).map(function (c) { return c.nome; });
   }
 
   // Month figures with MONTHLY budgets, no carry-over (spec rules 2-4). cfg.categorie = [{nome, gruppo, budget, archiviata}];
@@ -449,7 +488,7 @@
     return out;
   }
 
-  var api = {riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();
