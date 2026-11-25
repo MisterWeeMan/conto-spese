@@ -14,20 +14,24 @@ Product and plan: `docs/visione.md` and `docs/strategia-2027.md` (private), `CON
 
 ## Workflow (every change; user's decision, 2026-11-10)
 
-1. **Discuss first.** Say in two or three lines what would change, whether it is in or out of scope of the request, and whether it touches the stored data format. Edit only after the user's go-ahead.
+1. **Discuss first.** Say in two or three lines what would change, whether it is in or out of scope of the request, and whether it touches the stored data format. Edit only after the user's go-ahead. **Exception, plan activities (step 6): no proposal, no waiting** (user's decision, 2026-11-25); the plan and `docs/spec.md` are the go-ahead. Ask only when the spec is silent or contradicts itself, or the change would alter the stored data format beyond what `docs/spec.md` defines.
 2. **Logic is test-first.** Amounts, the budget rule and parsing: invoke the `mattpocock-skills:tdd` skill, write one failing test in `tests/`, see it fail, then the least code in `logic.js`. A logic bug starts with a test that reproduces it. No automated tests for UI. If the skill suggests something against this file (new dependency, real data in tests, browser automation), this file wins.
-3. **Verify.** `node --test`, then the preview at phone and desktop width. List in chat what the user must try by hand (Google login, sync); no separate document.
+3. **Verify.** `node --test`, then the preview at phone and desktop width. List in chat what the user must try by hand (Google login, sync). For plan activities the list also goes in the priority's manual-test document (step 6).
 4. **Review before any commit.**
    - `/code-review` on every diff; never `--fix` or `--comment` without asking.
    - `/security-review` only when login, Firestore writes or the import are touched.
    - Check the diff for real ledger data and for files under `dati/`: the repo is public.
    Fix real findings before proposing the commit.
 5. **Commit and push.** Outside the plan activities (step 6): only when asked, and say before a push that it deploys the site.
-6. **Activities of `docs/piano.md`.** One session per activity: do only that one, then stop (never start the next). At the end, automatically and in this order: run `node --test`; run step 4 (review and data check) on the diff and fix real findings; mark the row done in `docs/piano.md` (one line on what was done and any note for later activities); commit only the files of this activity (English message, with the attribution line) and push to `main`; report in chat, saying that the push deployed the site. Stop and ask instead if tests fail, a review finding is not fixed, the diff holds real ledger data or a file under `dati/`, or the change touches login, Firestore writes or the import and `/security-review` finds something.
+6. **Activities of `docs/piano.md`.** One session per activity: do only that one, then stop (never start the next). At the end, automatically and in this order: run `node --test`; run step 4 (review and data check) on the diff and fix real findings; mark the row done in `docs/piano.md` (one line on what was done and any note for later activities); from activity 2.1 on, add this activity's manual tests to `docs/test-manuali/priorita-N.md` (see "Manual-test documents" below); commit only the files of this activity (English message, with the attribution line) and push to `main`; report in chat, saying that the push deployed the site. Stop and ask instead if tests fail, a review finding is not fixed, the diff holds real ledger data or a file under `dati/`, or the change touches login, Firestore writes or the import and `/security-review` finds something.
 
 No backup is needed before the final migration (the data is a copy of the sheet, decided 2026-11-22). After it, back up before any format change.
 
-Deliberately not used here: branches and PRs, manual-check documents, browser automation (Playwright), CI test runs (they would not block the Pages deploy).
+## Manual-test documents (user's decision, 2026-11-25; from priority 2)
+
+One document per priority, `docs/test-manuali/priorita-N.md` (git-ignored: it holds screenshots and stays private). Italian, for the user to follow on phone and PC. Each plan activity adds its section as part of step 6; the last activity of the priority completes it and adds an opening checklist for the whole priority. Per test: what to do (numbered steps), what must happen, and a screenshot of the screen involved, saved in `docs/test-manuali/img/` and linked from the document. Screenshots come from the local preview with the fake Firebase and **invented data only**: never real ledger data, never the user's account. Say what could not be shown (Google login, real sync). The orchestrating chat does not rewrite the document; it reads it and reports it to the user when the priority closes.
+
+Deliberately not used here: branches and PRs, browser automation (Playwright), CI test runs (they would not block the Pages deploy).
 
 ## What it is
 
