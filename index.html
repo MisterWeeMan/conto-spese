@@ -108,8 +108,9 @@ details summary{cursor:pointer;font-weight:500}
 .imp small{grid-column:1/-1;color:var(--muted)}
 .marca{display:flex;align-items:center;gap:10px}
 .pag{display:contents}
+.voce{display:grid;grid-template-columns:1fr 1fr;gap:8px;border:1px solid var(--line);border-radius:8px;padding:10px}.voce .tutta{grid-column:1/-1}
 .due{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
-.mov.cat{grid-template-columns:minmax(0,1fr) auto}
+.mov.cat{grid-template-columns:minmax(0,1fr) auto}.mov.cat .s{grid-column:1/-1}
 .filtri{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
 .filtri select{width:auto}
 #menu{margin:0;padding:0;border:0;border-right:1px solid var(--line);height:100%;max-height:100%;width:min(280px,85vw);max-width:none;background:var(--surface);color:var(--ink)}
@@ -191,6 +192,11 @@ details summary{cursor:pointer;font-weight:500}
         <label>Saldo iniziale (€)<input id="svSaldo" inputmode="decimal" placeholder="0"></label>
         <label>Saldo iniziale alla data<input id="svData" type="date" required></label>
         <label class="tutta">Quota mensile (€)<input id="svQuota" inputmode="decimal" placeholder="0"></label>
+        <div class="tutta" id="svVociBox">
+          <div class="testa"><b>Voci</b><button class="btn" id="svVoceAgg" type="button">+ Voce</button></div>
+          <p class="stato" id="svVociNota">Con almeno una voce la quota mensile è la somma delle voci (importo ÷ mesi alla scadenza) e il campo sopra non conta. Il saldo resta uno solo.</p>
+          <div id="svVoci" style="display:grid;gap:10px;margin-top:8px"></div>
+        </div>
         <p class="stato tutta" id="svNota" hidden></p>
         <div class="azioni tutta">
           <button class="btn pri" id="svSalva" type="submit">Aggiungi</button>
@@ -250,6 +256,7 @@ details summary{cursor:pointer;font-weight:500}
         <label data-per="u e">Categoria<select id="categoria"></select></label>
         <label data-per="u e g vj cr rb" id="contoL">Conto<select id="conto"></select></label>
         <label data-per="g">Conto di arrivo<select id="contoA"></select></label>
+        <label class="tutta" data-per="u" id="voceL" hidden>Voce del salvadanaio<select id="voce"></select></label>
         <label class="tutta" data-per="rb">Credito che chiude<select id="credito"></select></label>
         <label class="tutta" data-per="u">La mia parte, se divisa con altri (€)<input id="parte" inputmode="decimal" placeholder="Vuota = tutto mio"></label>
         <p class="stato tutta" id="jointNota" hidden></p>
@@ -293,7 +300,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {saldoSalvadanaio, ammanco, parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, creditiAperti, meseCalc} = window.CSLogic;
+const {saldoSalvadanaio, quotaSalvadanaio, ammanco, parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, creditiAperti, meseCalc} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 
 const st = {mesi: {}, cfg: cfgNorm({}), ym: todayISO().slice(0, 7), edit: null, catEdit: null, catInfo: [], q: '', pronto: false, cfgPronto: false};
@@ -387,11 +394,20 @@ function aggiorna() {
   const t = tipo(), joint = t === 'u' && contoJoint(st.cfg, $('conto').value);
   for (const el of $('form').querySelectorAll('[data-per]')) el.hidden = !el.dataset.per.split(' ').includes(t);
   $('parte').parentElement.hidden = t !== 'u' || joint;
+  renderVoce();
   $('jointNota').hidden = !joint;
   if (joint) {
     const r = quotaMov(st.cfg, {d: $('data').value, u: parseAmount($('importo').value) || 0, k: $('conto').value}, qFissa());
     $('jointNota').textContent = r ? `Conto Joint: quota ${r.q}%, la mia parte è ${eur.format(r.p)}.` : 'Conto Joint senza una quota valida a questa data: impostala in Configurazione.';
   }
+}
+// Voce choice: only when the chosen category is a pot with voci (the voce is a label, the balance stays one)
+function renderVoce(preferita) {
+  const pot = svLista().find(x => x.nome === $('categoria').value), voci = pot?.voci || [], cur = preferita ?? $('voce').value;
+  const nomi = voci.length && cur && !voci.some(x => x.nome === cur) ? [...voci.map(x => x.nome), cur] : voci.map(x => x.nome);
+  $('voceL').hidden = tipo() !== 'u' || !nomi.length;
+  const k = nomi.join('|'); if ($('voce').dataset.k !== k) { $('voce').innerHTML = '<option value="">Nessuna voce</option>' + nomi.map(n => `<option>${esc(n)}</option>`).join(''); $('voce').dataset.k = k; }
+  $('voce').value = nomi.includes(cur) ? cur : '';
 }
 // editing keeps the share stored on the movement, as long as its date does not change
 const qFissa = () => st.edit?.q != null && st.edit.d === $('data').value ? st.edit.q : undefined;
@@ -424,6 +440,7 @@ function setEdit(m) {
   $('parte').value = m && m.p != null && !contoJoint(st.cfg, m.k) ? String(m.p).replace('.', ',') : '';
   renderForm(); // options first (they include the movement's own category and accounts), then the values
   $('categoria').value = m?.c || '';
+  renderVoce(m?.v || '');
   $('conto').value = m ? m.k || '' : ricorda('conto') || '';
   $('contoA').value = m?.a || ''; $('credito').value = m?.r || '';
   aggiorna();
@@ -456,6 +473,7 @@ $('form').addEventListener('submit', async ev => {
   // t: normal rows are '' (a stored extra income x2 stays x2); the other types come from the choice
   const m = {d: $('data').value, n: $('nota').value.trim(), e: entra ? imp : 0, u: entra ? 0 : imp, c, k, a, r, p: null, q: null,
     l: $('etichette').closest('[data-per]').hidden ? [] : parseEtichette($('etichette').value),
+    v: t === 'u' && !$('voceL').hidden ? $('voce').value : '',
     t: t === 'u' || t === 'e' ? (t === 'e' && st.edit?.t === 'x2' ? 'x2' : '') : t, x: 0};
   if (t === 'u' && contoJoint(st.cfg, k)) {
     const jq = quotaMov(st.cfg, m, qFissa());
@@ -611,7 +629,8 @@ $('catLista').addEventListener('click', ev => {
 });
 
 // Pots page (salvadanai). The whole list is written (merge replaces arrays). Balance shown at the end of the current month.
-// shortcut: fixed monthly quota only (voci come in 2.2); the name is fixed once saved (a rename would have to move the movements).
+// A pot has a fixed quota or voci (quota = sum of the voci). shortcut: the name of the pot and of a voce is fixed once saved
+// in a movement (a rename would have to move the movements).
 function svLista() { return st.cfg.salvadanai || []; }
 const nomeMeseOggi = () => todayISO().slice(0, 7);
 function renderSv(pots) {
@@ -619,7 +638,7 @@ function renderSv(pots) {
   $('svConta').textContent = `saldo a fine ${new Date(+oggi.slice(0, 4), +oggi.slice(5) - 1, 1).toLocaleDateString('it-IT', {month: 'long'})}`;
   $('svLista').innerHTML = pots.length ? [...pots].sort((a, b) => a.nome.localeCompare(b.nome, 'it')).map(v => `<button type="button" class="mov cat${st.svEdit === v.nome ? ' sel' : ''}" data-sv="${esc(v.nome)}">
     <span class="n">${esc(v.nome)}</span><span class="a">${eur.format(saldoSalvadanaio(st.mesi, v, oggi))}</span>
-    <span class="s">${esc(v.gruppo || 'Senza gruppo')} · ${esc(v.conto || 'senza conto')} · quota ${eur.format(v.quota || 0)}/mese</span></button>`).join('')
+    <span class="s">${esc(v.gruppo || 'Senza gruppo')} · ${esc(v.conto || 'senza conto')} · quota ${eur.format(quotaSalvadanaio(v, oggi))}/mese${v.voci?.length ? ` · ${v.voci.length} voci` : ''}</span></button>`).join('')
     : '<p class="vuoto">Nessun salvadanaio. Aggiungi il primo dal modulo.</p>';
   const conti = [...new Set([...contiAttivi(st.cfg).map(c => c.nome), svEditConto])].filter(Boolean);
   const v = $('svConto').value;
@@ -627,6 +646,36 @@ function renderSv(pots) {
   $('svConto').value = v; if ($('svConto').selectedIndex < 0) $('svConto').selectedIndex = 0;
 }
 let svEditConto = '';
+// One block per voce in the pot form; read back on save. cambio = quota that replaces the computed one from a month.
+const num = x => x == null ? '' : String(x).replace('.', ',');
+function voceRiga(v = {}) {
+  return `<div class="voce"><label class="tutta">Nome voce<input class="vn" maxlength="60" value="${esc(v.nome || '')}"></label>
+    <label>Importo annuale (€)<input class="va" inputmode="decimal" value="${num(v.annuale)}"></label>
+    <label>Scadenza (mese)<input class="vd" type="month" value="${esc(v.data || '')}"></label>
+    <label>Ciclo in mesi (vuoto = 12)<input class="vc" inputmode="numeric" value="${v.cicli || ''}"></label>
+    <label>Quota cambia dal mese<input class="vx" type="month" value="${esc(v.cambio?.da || '')}"></label>
+    <label class="tutta">Nuova quota mensile (€)<input class="vq" inputmode="decimal" value="${num(v.cambio?.quota)}"></label>
+    <button class="btn peric tutta" type="button" data-togli>Togli voce</button></div>`;
+}
+const svVociStato = () => { $('svQuota').disabled = !!$('svVoci').children.length; };
+function svLeggiVoci() { // → voci array, or a string with the error
+  const out = [];
+  for (const r of $('svVoci').children) {
+    const f = c => r.querySelector('.' + c), nome = f('vn').value.trim(), annuale = parseAmount(f('va').value), data = f('vd').value;
+    const ciclo = f('vc').value.trim(), cicli = ciclo ? +ciclo : 0, da = f('vx').value, quota = importo0(f('vq').value);
+    if (!nome) return 'Ogni voce ha bisogno di un nome';
+    if (out.some(x => x.nome.toLowerCase() === nome.toLowerCase())) return `La voce ${nome} è doppia`;
+    if (!(annuale > 0)) return `Voce ${nome}: scrivi l'importo annuale`;
+    if (!/^\d{4}-\d{2}$/.test(data)) return `Voce ${nome}: scegli il mese di scadenza`;
+    if (ciclo && !(Number.isInteger(cicli) && cicli > 0)) return `Voce ${nome}: il ciclo è un numero di mesi`;
+    if (!!da !== !!f('vq').value.trim()) return `Voce ${nome}: per il cambio servono mese e nuova quota`;
+    if (quota === null) return `Voce ${nome}: nuova quota non valida`;
+    out.push({nome, annuale, data, ...(cicli ? {cicli} : {}), ...(da ? {cambio: {da, quota}} : {})});
+  }
+  return out;
+}
+$('svVoceAgg').addEventListener('click', () => { $('svVoci').insertAdjacentHTML('beforeend', voceRiga()); svVociStato(); $('svVoci').lastElementChild.querySelector('.vn').focus(); });
+$('svVoci').addEventListener('click', ev => { const b = ev.target.closest('[data-togli]'); if (b) { b.closest('.voce').remove(); svVociStato(); } });
 function setSvEdit(nome) {
   const v = svLista().find(x => x.nome === nome) || null;
   st.svEdit = v ? v.nome : null; svEditConto = v?.conto || '';
@@ -642,6 +691,7 @@ function setSvEdit(nome) {
   $('svSaldo').value = v ? String(v.saldoIniziale?.importo ?? 0).replace('.', ',') : '';
   $('svData').value = v?.saldoIniziale?.data || todayISO();
   $('svQuota').value = v ? String(v.quota || 0).replace('.', ',') : '';
+  $('svVoci').innerHTML = (v?.voci || []).map(voceRiga).join(''); svVociStato();
   renderSv(svLista()); $('svConto').value = v?.conto || '';
 }
 const importo0 = s => { s = s.trim(); return !s || /^0+([.,]0+)?$/.test(s) ? 0 : parseAmount(s); };
@@ -651,10 +701,12 @@ $('svForm').addEventListener('submit', ev => {
   if (!nome) { $('svNome').focus(); return; }
   if (!ready()) { toast('Il database non è ancora pronto'); return; }
   if (!da && [...st.cats, ...svLista().map(v => v.nome)].some(c => c.toLowerCase() === nome.toLowerCase())) { toast('Esiste già una categoria o un salvadanaio con questo nome'); return; }
-  const importo = importo0($('svSaldo').value), quota = importo0($('svQuota').value), conto = $('svConto').value;
+  const voci = svLeggiVoci();
+  if (typeof voci === 'string') { toast(voci); return; }
+  const importo = importo0($('svSaldo').value), quota = voci.length ? 0 : importo0($('svQuota').value), conto = $('svConto').value;
   if (importo === null || quota === null) { toast('Saldo o quota non validi'); return; }
   if (!conto) { toast('Scegli il conto del salvadanaio'); $('svConto').focus(); return; }
-  const nuovo = {nome, gruppo: $('svGruppo').value, conto, saldoIniziale: {data: $('svData').value, importo}, quota};
+  const nuovo = {nome, gruppo: $('svGruppo').value, conto, saldoIniziale: {data: $('svData').value, importo}, quota, ...(voci.length ? {voci} : {})};
   if (scriviCfg({salvadanai: [...svLista().filter(v => v.nome !== nome), nuovo]})) { toast(da ? 'Salvadanaio salvato' : `Salvadanaio aggiunto: ${nome}`); setSvEdit(null); render(); }
 });
 $('svElimina').addEventListener('click', () => {

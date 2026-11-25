@@ -152,15 +152,42 @@
     return out;
   }
 
-  // Balance of pot sv ({nome, quota, saldoIniziale: {data, importo}}) at the end of month ym: opening balance + quota for
+  // Quota of a pot voce {nome, annuale, data 'YYYY-MM', cicli?, cambio?: {da 'YYYY-MM', quota}} in month ym. The goal is spread
+  // evenly over the months of the current cycle: from the cycle start (the month after the previous due month, or the pot's
+  // opening month apertura if later) to the due month included, so 80 due in September seen from January = 80 / 9. After the
+  // due month the next cycle (cicli months, default 12) starts. Cumulative rounding: each month is the cents difference of the
+  // running total, so a cycle adds up to the goal exactly. cambio: from its month the quota is that fixed value.
+  // shortcut: the cycle follows the calendar only; a payment made early or late does not move it. Upgrade if it matters.
+  function quotaVoce(v, ym, apertura) {
+    var idx = function (s) { return +s.slice(0, 4) * 12 + +s.slice(5, 7) - 1; }, r = function (x) { return Math.round(x * 100) / 100; };
+    var y = idx(ym);
+    if (!/^\d{4}-\d{2}/.test(v.data || '')) return 0; // a voce without a valid month saves nothing, rather than NaN everywhere
+    if (v.cambio && y >= idx(v.cambio.da)) return v.cambio.quota;
+    var c = v.cicli || 12, d0 = idx(v.data), i = y <= d0 ? 0 : Math.ceil((y - d0) / c), due = d0 + i * c;
+    var s = Math.max(due - c + 1, apertura ? idx(apertura) : -Infinity), n = due - s + 1, k = y - s + 1;
+    return k < 1 ? 0 : r(r(v.annuale * k / n) - r(v.annuale * (k - 1) / n));
+  }
+
+  // Monthly quota of pot sv in month ym: the sum of its voci, or the fixed sv.quota when it has none.
+  function quotaSalvadanaio(sv, ym) {
+    if (!(sv.voci && sv.voci.length)) return sv.quota || 0;
+    var ap = sv.saldoIniziale && sv.saldoIniziale.data.slice(0, 7), t = 0;
+    sv.voci.forEach(function (v) { t += quotaVoce(v, ym, ap); });
+    return Math.round(t * 100) / 100;
+  }
+
+  // Balance of pot sv ({nome, quota | voci, saldoIniziale: {data, importo}}) at the end of month ym: opening balance + quota of
   // every month from the opening month to ym (both included) - my part of the expenses with c = sv.nome dated from the
-  // opening date to the end of ym. Rows before the opening date are already inside the opening balance.
-  // shortcut: fixed monthly quota only (voci and quota from goal and date are 2.2); the raw balance is returned, never
-  // clamped: ammanco() keeps it from going below zero at registration.
+  // opening date to the end of ym (the voce v is only a label: one balance). Rows before the opening date are already inside
+  // the opening balance. The raw balance is returned, never clamped: ammanco() keeps it from going below zero at registration.
   function saldoSalvadanaio(mesi, sv, ym) {
     var si = sv.saldoIniziale || {data: '0000-01-01', importo: 0}, a = si.data.slice(0, 7);
     var n = Math.max(0, (+ym.slice(0, 4) - +a.slice(0, 4)) * 12 + (+ym.slice(5) - +a.slice(5)) + 1);
-    var tot = si.importo + n * (sv.quota || 0);
+    var tot = si.importo;
+    for (var i = 0, y = +a.slice(0, 4), mo = +a.slice(5); i < n; i++, mo++) {
+      if (mo > 12) { y++; mo = 1; }
+      tot += quotaSalvadanaio(sv, y + '-' + (mo < 10 ? '0' : '') + mo);
+    }
     Object.keys(mesi).forEach(function (k) {
       if (k > ym) return;
       movs(mesi, k).forEach(function (m) { if (m.c === sv.nome && m.d >= si.data) tot -= m.u ? mia(m) : -mia(m); });
@@ -214,7 +241,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, saldoSalvadanaio: saldoSalvadanaio, ammanco: ammanco, soglieSuperate: soglieSuperate, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, saldoSalvadanaio: saldoSalvadanaio, ammanco: ammanco, soglieSuperate: soglieSuperate, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

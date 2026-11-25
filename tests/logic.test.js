@@ -316,3 +316,53 @@ test('ammanco: a backdated expense must not sink a later month of the pot', () =
   assert.strictEqual(L.ammanco(mesi, cfg, {d: '2027-01-15', u: 50, c: 'Auto fissi'}), 40); // February would be at -40
   assert.strictEqual(L.ammanco(mesi, cfg, {d: '2027-01-15', u: 10, c: 'Auto fissi'}), 0);
 });
+
+// --- pot voci (2.2): one balance, quota = sum of the voci quotas, goal / months to the due month ---
+const rev = {nome: 'Revisione', annuale: 80, data: '2027-09', cicli: 24};
+const svV = (voci, extra) => Object.assign({nome: 'Auto', conto: 'Revolut', voci: voci, saldoIniziale: {data: '2027-01-01', importo: 0}}, extra);
+const somma = (v, da, a) => { var t = 0; for (var m = da; m <= a; m++) t += L.quotaVoce(v, '2027-' + String(m).padStart(2, '0'), '2027-01'); return Math.round(t * 100) / 100; };
+
+test('quotaVoce: goal / months from the start to the due month (80 in September from January = 80 / 9)', () => {
+  assert.strictEqual(L.quotaVoce(rev, '2027-01', '2027-01'), 8.89);
+  assert.strictEqual(somma(rev, 1, 9), 80); // cents add up exactly: May is 8.88
+});
+
+test('quotaVoce: after the due month the next cycle starts (80 / 24), and again on the following due date', () => {
+  assert.strictEqual(L.quotaVoce(rev, '2027-10', '2027-01'), 3.33);
+  let t = 0; for (let y = 2027 * 12 + 9; y < 2027 * 12 + 9 + 24; y++) t += L.quotaVoce(rev, Math.floor(y / 12) + '-' + String(y % 12 + 1).padStart(2, '0'), '2027-01');
+  assert.strictEqual(Math.round(t * 100) / 100, 80); // the whole 24-month cycle (Oct 2027 - Sep 2029) closes the 80 exactly
+  assert.strictEqual(L.quotaVoce(rev, '2029-10', '2027-01'), 3.33);
+});
+
+test('quotaVoce: default cycle is 12 months; a pot opened mid-cycle spreads the goal over the months left', () => {
+  const bollo = {nome: 'Bollo', annuale: 200, data: '2027-09'};
+  assert.strictEqual(L.quotaVoce(bollo, '2027-03', '2027-01'), 22.23); // 200 / 9, cumulative cents
+  assert.strictEqual(L.quotaVoce(bollo, '2027-10', '2027-01'), 16.67); // 200 / 12
+  assert.strictEqual(L.quotaVoce(bollo, '2027-07', '2027-07'), 66.67); // opened in July: 200 / 3
+});
+
+test('quotaVoce: a scheduled change replaces the computed quota from its month', () => {
+  const v = Object.assign({cambio: {da: '2027-10', quota: 5}}, rev);
+  assert.strictEqual(L.quotaVoce(v, '2027-09', '2027-01'), 8.89);
+  assert.strictEqual(L.quotaVoce(v, '2027-10', '2027-01'), 5);
+});
+
+test('quotaSalvadanaio: sum of the voci quotas; a pot without voci keeps its fixed quota', () => {
+  const ass = {nome: 'Assicurazione', annuale: 425, data: '2027-05'};
+  assert.strictEqual(L.quotaSalvadanaio(svV([rev, ass]), '2027-01'), 93.89); // 80 / 9 + 425 / 5 (January to May)
+  assert.strictEqual(L.quotaSalvadanaio({nome: 'X', quota: 20}, '2027-01'), 20);
+  assert.strictEqual(L.quotaSalvadanaio(svV([]), '2027-01'), 0);
+});
+
+test('saldoSalvadanaio with voci: one balance, an expense on a voce (v) comes off it', () => {
+  const s = svV([rev]);
+  assert.strictEqual(L.saldoSalvadanaio({}, s, '2027-09'), 80);
+  const mesi = {'2027-09': {a: {d: '2027-09-10', u: 80, c: 'Auto', v: 'Revisione'}}};
+  assert.strictEqual(L.saldoSalvadanaio(mesi, s, '2027-09'), 0);
+  assert.strictEqual(L.saldoSalvadanaio(mesi, s, '2027-10'), 3.33);
+});
+
+test('quotaVoce: a voce without a valid month gives 0, not NaN', () => {
+  assert.strictEqual(L.quotaVoce({nome: 'X', annuale: 80}, '2027-01', '2027-01'), 0);
+  assert.strictEqual(L.saldoSalvadanaio({}, svV([{nome: 'X', annuale: 80, data: 'boh'}]), '2027-03'), 0);
+});
