@@ -382,7 +382,7 @@
   // every month from the opening month to ym (both included) - my part of the expenses with c = sv.nome dated from the
   // opening date to the end of ym (the voce v is only a label: one balance). Rows before the opening date are already inside
   // the opening balance. The raw balance is returned, never clamped: ammanco() keeps it from going below zero at registration.
-  function saldoSalvadanaio(mesi, sv, ym) {
+  function saldoSalvadanaio(mesi, sv, ym, chiusure) {
     var si = sv.saldoIniziale || {data: '0000-01-01', importo: 0}, a = si.data.slice(0, 7);
     var n = Math.max(0, (+ym.slice(0, 4) - +a.slice(0, 4)) * 12 + (+ym.slice(5) - +a.slice(5)) + 1);
     var tot = si.importo;
@@ -398,7 +398,96 @@
         else if (m.c === sv.nome && m.u) tot -= mia(m);
       });
     });
+    Object.keys(chiusure || {}).forEach(function (k) { // month closings (3.3): surplus put in / overspend taken from this pot
+      if (k > ym || k < a) return;
+      ((chiusure[k] || {}).righe || []).forEach(function (r) {
+        if (r.a === sv.nome) tot += r.tipo === 'avanzo' ? r.importo - (r.coperto || 0) : -(r.coperto || 0);
+      });
+    });
     return Math.round(tot * 100) / 100;
+  }
+
+  // ym shifted by n months ('2026-01', -1 → '2025-12').
+  function meseDelta(ym, n) {
+    var i = +ym.slice(0, 4) * 12 + +ym.slice(5) - 1 + n;
+    return Math.floor(i / 12) + '-' + ('0' + (i % 12 + 1)).slice(-2);
+  }
+  // Lowest balance of pot sv from month ym to the last month with data (or ym): what a closing may take away without a later month going negative.
+  function saldoMinimoDa(mesi, sv, ym, chiusure) {
+    var fine = Object.keys(mesi).concat(ym).sort().pop(), min = Infinity;
+    for (var k = ym; k <= fine; k = meseDelta(k, 1)) min = Math.min(min, saldoSalvadanaio(mesi, sv, k, chiusure));
+    return min;
+  }
+
+  // Month closing (3.3, spec rule 13): surplus and overspend of the budget categories of month ym, never decided automatically.
+  // chiusuraProposta suggests a choice for each, chiusuraCalcola applies the user's choices (scelte = {category: a}).
+  // Surplus: a = pot name (the buffer, cfg.extra.cuscinetto, by default) or '' = savings that stay on the account.
+  // Overspend: a = a pot (its balance at the end of the month, never below zero) or a bucket with a taglio that has a surplus
+  // (its residual); '' = not covered. The emergency fund is never a source nor a destination (use a transfer for it).
+  // shortcut: an overspend is covered by one source only: if short, the rest stays "scoperto" and is reported.
+  function chiusuraBase(mesi, cfg, ym) {
+    var r2 = function (x) { return Math.round(x * 100) / 100; }, ex = cfg.extra || {}, fe = (cfg.fondoEmergenze || {}).sottosaldo || ex.emergenze || 'Fondo emergenze';
+    var sc = Object.assign({}, cfg.chiusure), pots = {}, taglio = {}, busta = {};
+    delete sc[ym]; // the closing being made or redone does not count in its own balances
+    (cfg.salvadanai || []).forEach(function (v) { if (v.nome !== fe) pots[v.nome] = Math.max(0, saldoMinimoDa(mesi, v, ym, sc)); });
+    (cfg.categorie || []).forEach(function (c) { if (c.taglio > 0 && !c.archiviata) taglio[c.nome] = c.taglio; });
+    var voci = meseCalc(mesi, cfg, ym).righe.filter(function (r) { return Math.abs(r.residuo) > 0.005; })
+      .map(function (r) { return {c: r.c, tipo: r.residuo > 0 ? 'avanzo' : 'sforo', importo: r2(Math.abs(r.residuo))}; })
+      .sort(function (a, b) { return (a.tipo === b.tipo ? 0 : a.tipo === 'avanzo' ? -1 : 1) || b.importo - a.importo || a.c.localeCompare(b.c, 'it'); });
+    voci.forEach(function (v) { if (v.tipo === 'avanzo' && taglio[v.c]) busta[v.c] = v.importo; });
+    return {voci: voci, pots: pots, busta: busta, taglio: taglio, cus: ex.cuscinetto || 'Cuscinetto', r2: r2};
+  }
+  // → {voci: [{c, tipo: 'avanzo'|'sforo', importo}], scelte: {c: a}}. Surplus → the buffer (or '' without it). Overspend → the buffer if
+  // it has enough, else the first bucket by taglio whose surplus is enough, else '' (scoperto). Running balances, so two overspends do not use the same money.
+  function chiusuraProposta(mesi, cfg, ym) {
+    var b = chiusuraBase(mesi, cfg, ym), scelte = {}, pots = Object.assign({}, b.pots), busta = Object.assign({}, b.busta);
+    var cus = b.cus in pots ? b.cus : '';
+    var ordine = Object.keys(busta).sort(function (x, y) { return b.taglio[x] - b.taglio[y] || x.localeCompare(y, 'it'); });
+    b.voci.forEach(function (v) {
+      if (v.tipo === 'avanzo') { scelte[v.c] = cus; return; }
+      var da = cus && pots[cus] >= v.importo - 0.005 ? cus : ordine.find(function (n) { return busta[n] >= v.importo - 0.005; }) || '';
+      if (da === cus && da) pots[da] = b.r2(pots[da] - v.importo); else if (da) busta[da] = b.r2(busta[da] - v.importo);
+      scelte[v.c] = da;
+    });
+    return {voci: b.voci, scelte: scelte, pots: b.pots, buste: b.busta}; // pots = balance of each pot usable as source or destination, buste = surplus of the buckets with a taglio
+  }
+  // → {righe: [{c, tipo, importo, a, coperto}], errori: [text], avanzo, sforo, scoperto}. Surplus: coperto = what overspends took from
+  // that bucket (importo - coperto goes to a). Overspend: coperto = what its source gave (importo - coperto = scoperto).
+  function chiusuraCalcola(mesi, cfg, ym, scelte) {
+    var b = chiusuraBase(mesi, cfg, ym), r2 = b.r2, errori = [], pots = Object.assign({}, b.pots), busta = Object.assign({}, b.busta);
+    var righe = b.voci.map(function (v) { return {c: v.c, tipo: v.tipo, importo: v.importo, a: (scelte || {})[v.c] || '', coperto: 0}; });
+    righe.forEach(function (r) {
+      if (r.tipo !== 'sforo' || !r.a) return;
+      var d = r.a in pots ? pots : r.a in busta ? busta : null;
+      if (!d) { errori.push(r.c + ': ' + r.a + ' non può coprire lo sforo'); r.a = ''; return; }
+      r.coperto = r2(Math.min(r.importo, d[r.a])); d[r.a] = r2(d[r.a] - r.coperto);
+      if (r.coperto < r.importo - 0.005) errori.push(r.c + ': ' + r.a + ' copre solo ' + r.coperto.toFixed(2).replace('.', ',') + ' € su ' + r.importo.toFixed(2).replace('.', ',') + ' €');
+    });
+    righe.forEach(function (r) {
+      if (r.tipo !== 'avanzo') return;
+      if (r.c in b.busta) r.coperto = r2(b.busta[r.c] - busta[r.c]);
+      if (r.a && !(r.a in b.pots)) { errori.push(r.c + ': ' + r.a + ' non è un salvadanaio valido'); r.a = ''; }
+    });
+    var sum = function (t, f) { return r2(righe.filter(function (r) { return r.tipo === t; }).reduce(function (s, r) { return s + f(r); }, 0)); };
+    return {righe: righe, errori: errori, avanzo: sum('avanzo', function (r) { return r.importo - r.coperto; }), sforo: sum('sforo', function (r) { return r.importo; }), scoperto: sum('sforo', function (r) { return r.importo - r.coperto; })};
+  }
+  // A month is closed once; it can be reopened only while the next month is not closed.
+  // With mesi it also refuses to reopen when the money the closing put in a pot was already spent (a balance would go negative).
+  function chiusuraStato(cfg, ym, mesi) {
+    var ch = cfg.chiusure || {}, sc = Object.assign({}, ch), chiusa = !!ch[ym], motivo = '';
+    delete sc[ym];
+    if (chiusa && ch[meseDelta(ym, 1)]) motivo = 'Il mese dopo è già chiuso: riaprilo prima.';
+    else if (chiusa && mesi) (cfg.salvadanai || []).some(function (v) {
+      var senza = saldoMinimoDa(mesi, v, ym, sc);
+      if (senza >= -0.005 || senza >= saldoMinimoDa(mesi, v, ym, ch)) return false; // only a negative the closing itself prevents
+      return (motivo = v.nome + ' andrebbe sotto zero: i soldi di questa chiusura sono già stati spesi.');
+    });
+    return {chiusa: chiusa, puoRiaprire: chiusa && !motivo, motivo: motivo};
+  }
+  // Month before ym when it has movements and is not closed (the home reminder), else null.
+  function chiusuraMancante(mesi, cfg, ym) {
+    var prev = meseDelta(ym, -1);
+    return movs(mesi, prev).length > 0 && !(cfg.chiusure || {})[prev] ? prev : null;
   }
 
   // Suggested destination (b) of an extra income m {d, e, l?}: {b, motivo}. It only proposes, the user chooses. Names and threshold
@@ -412,7 +501,7 @@
     var pots = cfg.salvadanai || [], ym = m.d.slice(0, 7);
     var ha = function (n) { return pots.some(function (v) { return v.nome === n; }); };
     var fe = cfg.fondoEmergenze || {}; // the fund goal set in 2.7 wins over the pot's own obiettivo
-    var manca = function (v) { var o = v.nome === fe.sottosaldo && fe.obiettivo > 0 ? fe.obiettivo : v.obiettivo; var f = v.nome === fe.sottosaldo && fondoEmergenze(mesi, cfg, ym); return o > 0 ? o - (f ? f.saldo : saldoSalvadanaio(mesi, v, ym)) : 0; }; // the fund balance may come from its sub-balance (3.2)
+    var manca = function (v) { var o = v.nome === fe.sottosaldo && fe.obiettivo > 0 ? fe.obiettivo : v.obiettivo; var f = v.nome === fe.sottosaldo && fondoEmergenze(mesi, cfg, ym); return o > 0 ? o - (f ? f.saldo : saldoSalvadanaio(mesi, v, ym, cfg.chiusure)) : 0; }; // the fund balance may come from its sub-balance (3.2)
     if (((m.l || []).some(function (l) { return String(l).toLowerCase() === 'tcg'; }) || (m.c && m.c === x.carte)) && ha(x.tcg)) return {b: x.tcg, motivo: 'Vendita di carte: va al fondo TCG'};
     if (m.e < x.soglia) return {b: x.cuscinetto, motivo: 'Sotto ' + x.soglia + ' €: nel cuscinetto'};
     var em = pots.find(function (v) { return v.nome === (fe.sottosaldo || x.emergenze); });
@@ -440,7 +529,7 @@
     (cfg.categorie || []).forEach(function (c) { if (!c.archiviata && c.gruppo === 'Necessarie' && c.budget > 0) nec += c.budget; });
     (cfg.salvadanai || []).forEach(function (v) { if (fe.sottosaldo !== v.nome && v.gruppo === 'Necessarie') nec += quotaSalvadanaio(v, ym); });
     nec = r2(nec);
-    var saldo = ss ? sottosaldo(mesi, cfg, fe.conto, fe.sottosaldo, ym + '-31') : saldoSalvadanaio(mesi, sv, ym), ob = fe.obiettivo || 0;
+    var saldo = ss ? sottosaldo(mesi, cfg, fe.conto, fe.sottosaldo, ym + '-31') : saldoSalvadanaio(mesi, sv, ym, cfg.chiusure), ob = fe.obiettivo || 0;
     return {saldo: saldo, obiettivo: ob, necessarie: nec, mesi: nec > 0 ? r2(saldo / nec) : 0, seiMesi: r2(6 * nec),
       manca: r2(Math.max(0, ob - saldo)), sotto: saldo < ob, promemoria: ym.slice(5) === '01' || ym.slice(5) === '07'};
   }
@@ -467,7 +556,7 @@
       if (mo > 12) { y++; mo = 1; }
       var k = y + '-' + (mo < 10 ? '0' : '') + mo;
       if (k > fine) break;
-      min = Math.min(min, saldoSalvadanaio(con, v, k));
+      min = Math.min(min, saldoSalvadanaio(con, v, k, cfg.chiusure));
     }
     return Math.round(-min * 100) / 100 + 0; // + 0: no -0
   }
@@ -553,7 +642,7 @@
     return out;
   }
 
-  var api = {riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, sottosaldo: sottosaldo, sottosaldiConto: sottosaldiConto, investimenti: investimenti, valoreInvestimenti: valoreInvestimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, sottosaldo: sottosaldo, sottosaldiConto: sottosaldiConto, investimenti: investimenti, valoreInvestimenti: valoreInvestimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

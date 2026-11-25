@@ -844,3 +844,91 @@ test('destinazioneExtra: the fund is "touched" by its sub-balance balance when i
   const cfg = {...cfgSS, salvadanai: [{nome: 'Fondo', gruppo: 'Risparmi', conto: 'TR', saldoIniziale: {data: '2027-01-01', importo: 9999}}], fondoEmergenze: {conto: 'TR', sottosaldo: 'Fondo', obiettivo: 2000}};
   assert.strictEqual(L.destinazioneExtra(mesiSS, cfg, {d: '2027-02-20', e: 500}).b, 'Fondo'); // sub-balance 970 < 2000, although the pot says 9999
 });
+
+// ---- 3.3 month closing (made-up data) ----
+const cfgCh = () => ({
+  categorie: [
+    {nome: 'Affitto', gruppo: 'Necessarie', budget: 500},
+    {nome: 'Cena', gruppo: 'Non necessarie', budget: 100, taglio: 1},
+    {nome: 'Svago', gruppo: 'Non necessarie', budget: 80, taglio: 2},
+    {nome: 'Libri', gruppo: 'Non necessarie', budget: 50}
+  ],
+  salvadanai: [{nome: 'Cuscinetto', gruppo: 'Risparmi', saldoIniziale: {data: '2026-01-01', importo: 40}}, {nome: 'Viaggi', gruppo: 'Risparmi', saldoIniziale: {data: '2026-01-01', importo: 0}}]
+});
+const mesiCh = {'2026-01': {a: {d: '2026-01-05', u: 500, c: 'Affitto'}, b: {d: '2026-01-06', u: 30, c: 'Cena'}, c: {d: '2026-01-07', u: 120, c: 'Libri'}}};
+
+test('chiusuraProposta: surplus goes to the buffer, an overspend the buffer cannot cover goes to the lowest-taglio bucket with enough residual', () => {
+  const p = L.chiusuraProposta(mesiCh, cfgCh(), '2026-01');
+  assert.deepStrictEqual(p.voci.map(v => [v.c, v.tipo, v.importo]), [['Svago', 'avanzo', 80], ['Cena', 'avanzo', 70], ['Libri', 'sforo', 70]]);
+  assert.deepStrictEqual(p.scelte, {Svago: 'Cuscinetto', Cena: 'Cuscinetto', Libri: 'Cena'});
+});
+
+test('chiusuraCalcola: the bucket that covers an overspend gives up that part of its own surplus', () => {
+  const r = L.chiusuraCalcola(mesiCh, cfgCh(), '2026-01', {Svago: 'Cuscinetto', Cena: 'Cuscinetto', Libri: 'Cena'});
+  const per = c => r.righe.find(x => x.c === c);
+  assert.deepStrictEqual([per('Libri').coperto, per('Cena').coperto], [70, 70]);
+  assert.deepStrictEqual([r.avanzo, r.sforo, r.scoperto, r.errori], [80, 70, 0, []]);
+});
+
+test('chiusuraCalcola: an overspend is never taken below zero from the buffer; the rest is reported as scoperto', () => {
+  const r = L.chiusuraCalcola(mesiCh, cfgCh(), '2026-01', {Svago: '', Cena: '', Libri: 'Cuscinetto'});
+  assert.strictEqual(r.righe.find(x => x.c === 'Libri').coperto, 40);
+  assert.strictEqual(r.scoperto, 30);
+  assert.strictEqual(r.errori.length, 1);
+});
+
+test('chiusuraCalcola: the emergency fund and non-pots are refused as destination or source', () => {
+  const cfg = cfgCh(); cfg.salvadanai.push({nome: 'Fondo emergenze', saldoIniziale: {data: '2026-01-01', importo: 999}});
+  const r = L.chiusuraCalcola(mesiCh, cfg, '2026-01', {Svago: 'Fondo emergenze', Cena: 'Affitto', Libri: 'Fondo emergenze'});
+  assert.strictEqual(r.errori.length, 3);
+  assert.deepStrictEqual(r.righe.map(x => x.a), ['', '', '']);
+});
+
+test('saldoSalvadanaio: a saved closing adds the surplus to and takes the overspend from the pot, from its month on', () => {
+  const sv = {nome: 'Cuscinetto', saldoIniziale: {data: '2026-01-01', importo: 40}};
+  const ch = {'2026-01': {righe: [{c: 'Cena', tipo: 'avanzo', importo: 70, a: 'Cuscinetto', coperto: 20}, {c: 'Libri', tipo: 'sforo', importo: 70, a: 'Cuscinetto', coperto: 30}, {c: 'X', tipo: 'avanzo', importo: 5, a: 'Viaggi', coperto: 0}]}};
+  assert.strictEqual(L.saldoSalvadanaio({}, sv, '2026-01'), 40);
+  assert.strictEqual(L.saldoSalvadanaio({}, sv, '2026-01', ch), 60);
+  assert.strictEqual(L.saldoSalvadanaio({}, sv, '2026-03', ch), 60);
+  assert.strictEqual(L.saldoSalvadanaio({}, {nome: 'Cuscinetto', saldoIniziale: {data: '2026-02-01', importo: 0}}, '2026-03', ch), 0);
+});
+
+test('chiusuraProposta: a redone closing does not count in the balances it is computed from; no differences = no items', () => {
+  const cfg = cfgCh();
+  cfg.chiusure = {'2026-01': {righe: [{c: 'Cena', tipo: 'avanzo', importo: 70, a: 'Cuscinetto', coperto: 0}]}};
+  assert.strictEqual(L.chiusuraProposta(mesiCh, cfg, '2026-01').scelte.Libri, 'Cena'); // buffer is 40, not 110
+  assert.deepStrictEqual(L.chiusuraProposta({}, cfgCh(), '2026-02').voci.length, 4); // nothing spent: every budget is a surplus
+  const tutto = {'2026-02': {a: {d: '2026-02-01', u: 500, c: 'Affitto'}, b: {d: '2026-02-01', u: 100, c: 'Cena'}, c: {d: '2026-02-01', u: 80, c: 'Svago'}, d: {d: '2026-02-01', u: 50, c: 'Libri'}}};
+  assert.deepStrictEqual(L.chiusuraProposta(tutto, cfgCh(), '2026-02').voci, []);
+});
+
+test('chiusuraStato and chiusuraMancante: closed once, reopen only while the next month is open; reminder for the previous month', () => {
+  const cfg = {chiusure: {'2026-01': {righe: []}}};
+  assert.deepStrictEqual([L.chiusuraStato(cfg, '2026-01').chiusa, L.chiusuraStato(cfg, '2026-01').puoRiaprire], [true, true]);
+  assert.strictEqual(L.chiusuraStato({chiusure: {'2026-12': {}, '2027-01': {}}}, '2026-12').puoRiaprire, false);
+  assert.strictEqual(L.chiusuraStato(cfg, '2026-02').chiusa, false);
+  assert.strictEqual(L.chiusuraMancante(mesiCh, {}, '2026-02'), '2026-01');
+  assert.strictEqual(L.chiusuraMancante(mesiCh, cfg, '2026-02'), null);
+  assert.strictEqual(L.chiusuraMancante(mesiCh, {}, '2026-03'), null); // February has no movements
+});
+
+test('ammanco: a closing that takes money from a pot counts in its balance', () => {
+  const cfg = cfgCh(); cfg.chiusure = {'2026-01': {righe: [{c: 'Libri', tipo: 'sforo', importo: 30, a: 'Cuscinetto', coperto: 30}]}};
+  assert.strictEqual(L.ammanco({}, cfg, {d: '2026-02-03', u: 25, c: 'Cuscinetto'}), 15);
+});
+
+test('meseDelta shifts a month across the year boundary', () => {
+  assert.strictEqual(L.meseDelta('2026-01', -1), '2025-12');
+  assert.strictEqual(L.meseDelta('2026-12', 1), '2027-01');
+});
+
+test('chiusura: a pot cannot give money a later month already spent, and a closing whose money was spent cannot be reopened', () => {
+  const cfg = cfgCh();
+  cfg.salvadanai[0].saldoIniziale.importo = 100; // buffer
+  const mesi = {...mesiCh, '2026-02': {z: {d: '2026-02-10', u: 90, c: 'Cuscinetto'}}}; // 90 spent from the buffer in February
+  assert.strictEqual(L.chiusuraProposta(mesi, cfg, '2026-01').pots.Cuscinetto, 10); // 100 now, only 10 left after February
+  cfg.chiusure = {'2026-01': {d: '2026-02-01', righe: [{c: 'Cena', tipo: 'avanzo', importo: 70, a: 'Cuscinetto', coperto: 0}]}};
+  const mesi2 = {...mesiCh, '2026-02': {z: {d: '2026-02-10', u: 150, c: 'Cuscinetto'}}}; // spent the closing's money too
+  assert.strictEqual(L.chiusuraStato(cfg, '2026-01', mesi2).puoRiaprire, false);
+  assert.strictEqual(L.chiusuraStato(cfg, '2026-01', mesi).puoRiaprire, true);
+});
