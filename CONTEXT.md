@@ -9,7 +9,7 @@ Termini dello strumento, in italiano. Gli stessi nomi vanno usati nel codice e n
 - **Categoria**: voce di spesa con budget (15-20 in tutto). Il dettaglio fine va nelle etichette.
 - **Gruppo**: necessarie, non necessarie, risparmi e salvadanai (circa 50/30/20). È una proprietà di ogni categoria o salvadanaio, non un contenitore fisso.
 - **Busta**: nome generico per budget o salvadanaio. Una spesa può essere coperta prendendo da un'altra busta.
-- **Priorità di taglio**: numero su ogni busta non necessaria (1 = prima da tagliare). Ordina i suggerimenti di "posso permettermelo?".
+- **Priorità di taglio**: numero su ogni busta non necessaria (1 = prima da tagliare). Ordina i suggerimenti di "posso permettermelo?". Il numero è unico tra le categorie attive: se ne dai uno già usato, le altre da lì in giù scalano di uno.
 - **Cuscinetto**: busta di risparmio che copre gli sforamenti dei budget.
 - **Piano del mese**: la divisione dello stipendio tra budget e salvadanai.
 - **Chiusura del mese**: scelta esplicita su avanzi e sfori. Dove va l'avanzo, chi copre lo sforo.

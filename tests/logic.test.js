@@ -627,3 +627,30 @@ test('validaQuotaJoint: whole numbers from 1 to 99', () => {
   for (const s of ['56,5', '56.5', 'abc', '']) assert.ok(L.validaQuotaJoint(s).err);
   assert.match(L.validaQuotaJoint('56,5').err, /interi/);
 });
+
+// riordinaTaglio: unique cut priority, insertion with shift; archived categories stay out of the ranking
+const cs = (...x) => x.map(([nome, taglio, archiviata]) => ({nome, taglio, archiviata}));
+test('riordinaTaglio: a free number changes only that category', () => {
+  assert.deepStrictEqual(L.riordinaTaglio(cs(['A', 1], ['B', 3], ['C']), 'C', 2), {C: 2});
+});
+test('riordinaTaglio: a taken number shifts the whole chain down', () => {
+  assert.deepStrictEqual(L.riordinaTaglio(cs(['A', 1], ['B', 2], ['C', 3], ['D', 5], ['E']), 'E', 2), {E: 2, B: 3, C: 4});
+});
+test('riordinaTaglio: beyond the last number or the same number', () => {
+  assert.deepStrictEqual(L.riordinaTaglio(cs(['A', 1], ['B', 2]), 'B', 9), {B: 9});
+  assert.deepStrictEqual(L.riordinaTaglio(cs(['A', 1], ['B', 2]), 'B', 2), {});
+});
+test('riordinaTaglio: moving up shifts the ones in between, leaving the old slot free', () => {
+  assert.deepStrictEqual(L.riordinaTaglio(cs(['A', 1], ['B', 2], ['C', 3]), 'C', 1), {C: 1, A: 2, B: 3});
+});
+test('riordinaTaglio: removing the number does not renumber the others', () => {
+  assert.deepStrictEqual(L.riordinaTaglio(cs(['A', 1], ['B', 2], ['C', 3]), 'B', null), {B: null});
+  assert.deepStrictEqual(L.riordinaTaglio(cs(['A', 1], ['B']), 'B', null), {});
+});
+test('riordinaTaglio: archived categories neither collide nor shift', () => {
+  assert.deepStrictEqual(L.riordinaTaglio(cs(['A', 1], ['Old', 2, true], ['B', 2]), 'C', 2), {C: 2, B: 3});
+  assert.deepStrictEqual(L.riordinaTaglio(cs(['A', 1], ['Old', 2, true]), 'Old', 1), {Old: 1});
+});
+test('riordinaTaglio: legacy duplicates are separated', () => {
+  assert.deepStrictEqual(L.riordinaTaglio(cs(['A', 2], ['B', 2], ['C']), 'C', 2), {C: 2, A: 3, B: 4});
+});

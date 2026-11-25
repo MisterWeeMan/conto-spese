@@ -120,6 +120,16 @@ details summary{cursor:pointer;font-weight:500}
 .mov.cat{grid-template-columns:minmax(0,1fr) auto}.mov.cat .s{grid-column:1/-1}
 .filtri{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
 .filtri select{width:auto}
+.tabw{overflow-x:auto;border-top:1px solid var(--line)}
+.tab{border-collapse:separate;border-spacing:0;width:100%;font-size:14px}
+.tab th,.tab td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap;background:var(--surface)}
+.tab th button,.tab td .nm{all:unset;cursor:pointer}
+.tab th button{font-weight:600;font-size:12px;color:var(--muted)}
+.tab th button:focus-visible,.tab td .nm:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+.tab .d{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.tab th:first-child,.tab td:first-child{position:sticky;left:0;border-right:1px solid var(--line)}
+.tab tbody tr{cursor:pointer}.tab tbody tr:hover td{background:var(--bg)}.tab tbody tr.sel td{background:var(--track)}
+.tab td .pri{width:4.5em;padding:5px 6px;text-align:right;font-family:var(--mono)}
 #menu{margin:0;padding:0;border:0;border-right:1px solid var(--line);height:100%;max-height:100%;width:min(280px,85vw);max-width:none;background:var(--surface);color:var(--ink)}
 #menu[open]{animation:entra .18s ease-out}
 @keyframes entra{from{transform:translateX(-100%)}}
@@ -186,9 +196,8 @@ details summary{cursor:pointer;font-weight:500}
       <div class="testa"><h2>Categorie</h2><span class="stato" id="catConta"></span></div>
       <div class="filtri">
         <input id="catCerca" type="search" placeholder="Cerca per nome" aria-label="Cerca nelle categorie">
-        <select id="catOrd" aria-label="Ordina le categorie"><option value="nome">Per nome</option><option value="mov">Per movimenti</option></select>
       </div>
-      <div class="lista" id="catLista"><p class="vuoto">Qui compaiono le categorie. Tocca una riga per modificarla.</p></div>
+      <div class="tabw" id="catLista"><p class="vuoto">Qui compaiono le categorie. Tocca una riga per modificarla.</p></div>
     </section>
   </div>
 
@@ -376,7 +385,7 @@ document.addEventListener('input', ev => {
   else if (el.dataset.eur !== undefined) leggi(el);
 });
 
-const st = {mesi: {}, cfg: cfgNorm({}), ym: todayISO().slice(0, 7), edit: null, catEdit: null, catInfo: [], q: '', pronto: false, cfgPronto: false};
+const st = {mesi: {}, cfg: cfgNorm({}), ym: todayISO().slice(0, 7), edit: null, catEdit: null, catOrd: {k: 'nome', dir: 1}, catInfo: [], q: '', pronto: false, cfgPronto: false};
 const ready = () => st.uid && st.pronto && st.cfgPronto;
 const nMov = n => `${n} moviment${n === 1 ? 'o' : 'i'}`;
 const TIPI = {g: 'Giroconto', vj: 'Versamento compagna', cr: 'Credito', rb: 'Rimborso', x2: 'Entrata extra'};
@@ -442,10 +451,18 @@ function render() {
   if (st.pronto) {
     const cq = $('catCerca').value.trim().toLowerCase();
     const cv = st.catInfo.filter(r => r.c.toLowerCase().includes(cq));
-    if ($('catOrd').value === 'mov') cv.sort((a, b) => b.anno - a.anno); // stable: ties stay by name
-    $('catConta').textContent = `${cq ? `${cv.length} di ${st.catInfo.length}` : st.catInfo.length} categorie · movimenti nel ${anno}`;
-    $('catLista').innerHTML = cv.length ? cv.map(r => `<button type="button" class="mov cat${st.catEdit === r.c ? ' sel' : ''}" data-cat="${esc(r.c)}">
-      <span class="n">${esc(r.c)}${r.budget > 0 ? ' · ' + eur.format(r.budget) + '/mese' : ''}${r.archiviata ? ' · archiviata' : ''}</span><span class="a">${r.anno}</span></button>`).join('')
+    const o = st.catOrd, v = r => o.k === 'nome' ? r.c : o.k === 'taglio' ? r.taglio || null : o.k === 'archiviata' ? !!r.archiviata : o.k === 'budget' ? r.budget || 0 : o.k === 'n' ? r.n : r.gruppo || '';
+    cv.sort((x, y) => { // numbers: no priority always last; text with the Italian collation
+      const p = v(x), q = v(y);
+      if (o.k === 'taglio' && (p === null || q === null)) return p === q ? 0 : p === null ? 1 : -1;
+      return o.dir * (typeof p === 'string' ? p.localeCompare(q, 'it') : p - q);
+    });
+    $('catConta').textContent = `${cq ? `${cv.length} di ${st.catInfo.length}` : st.catInfo.length} categorie · movimenti in tutti gli anni`;
+    const COL = [['nome', 'Nome', ''], ['gruppo', 'Gruppo', ''], ['budget', 'Budget mensile', 'd'], ['taglio', 'Priorità', 'd'], ['archiviata', 'Archiviata', ''], ['n', 'Movimenti', 'd']];
+    $('catLista').innerHTML = cv.length ? `<table class="tab"><thead><tr>${COL.map(([k, l, c]) => `<th scope="col" class="${c}" aria-sort="${o.k === k ? (o.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" data-ord="${k}">${l}${o.k === k ? (o.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr></thead><tbody>${cv.map(r => `<tr data-cat="${esc(r.c)}" class="${st.catEdit === r.c ? 'sel' : ''}">
+      <td><button type="button" class="nm" aria-label="Modifica ${esc(r.c)}">${esc(r.c)}</button></td><td>${esc(r.gruppo || '–')}</td><td class="d">${r.budget > 0 ? eur.format(r.budget) : '–'}</td>
+      <td class="d"><input class="pri" inputmode="numeric" value="${r.taglio > 0 ? r.taglio : ''}" placeholder="–" aria-label="Priorità di taglio di ${esc(r.c)}" data-pri="${esc(r.c)}"></td>
+      <td>${r.archiviata ? 'Sì' : 'No'}</td><td class="d">${r.n}</td></tr>`).join('')}</tbody></table>`
       : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
   $('etList').innerHTML = [...new Set([...etichette(st.mesi).map(r => r.l), ...(st.cfg.etichette || []).map(x => x?.nome).filter(Boolean)])].map(l => `<option value="${esc(l)}">`).join('');
@@ -718,7 +735,10 @@ $('catForm').addEventListener('submit', ev => {
   if (budget === null) { $('catBudget').focus(); return; }
   if (ts && !(taglio > 0)) { toast('Priorità di taglio non valida'); $('catTaglio').focus(); return; }
   const nuova = {nome, gruppo: $('catGruppo').value, budget, taglio, archiviata: $('catArch').checked};
-  const cfg = {categorie: [...st.cfg.categorie.filter(c => c.nome !== da && c.nome !== nome), nuova]};
+  // unique cut priority: the other categories shift down when the number is taken
+  const prev = st.catInfo.find(x => x.c === da) || {};
+  const mod = window.CSLogic.riordinaTaglio([...st.catInfo.filter(c => c.c !== da), {nome: da || nome, taglio: prev.taglio, archiviata: nuova.archiviata}], da || nome, taglio);
+  const cfg = {categorie: [...st.cfg.categorie.filter(c => c.nome !== da && c.nome !== nome).map(c => c.nome in mod ? {...c, taglio: mod[c.nome]} : c), nuova]};
   // one batch: a rename must not stay half done between the movements and the config
   const batch = writeBatch(db);
   let n = 0;
@@ -745,10 +765,25 @@ $('catElimina').addEventListener('click', () => {
 });
 $('catAnnulla').addEventListener('click', () => { setCatEdit(null); render(); });
 $('catCerca').addEventListener('input', render);
-$('catOrd').addEventListener('change', render);
 $('catLista').addEventListener('click', ev => {
-  const b = ev.target.closest('.mov'); if (!b) return;
+  const h = ev.target.closest('[data-ord]');
+  if (h) { st.catOrd = st.catOrd.k === h.dataset.ord ? {k: h.dataset.ord, dir: -st.catOrd.dir} : {k: h.dataset.ord, dir: 1}; render(); return; }
+  const b = ev.target.closest('tr[data-cat]'); if (!b || ev.target.closest('input')) return;
   setCatEdit(b.dataset.cat); render(); $('pagCategorie').scrollIntoView({behavior: 'smooth', block: 'start'});
+});
+
+// Priority typed in a table cell: unique number, the ones below shift (riordinaTaglio); one write of the whole list.
+$('catLista').addEventListener('change', ev => {
+  const nome = ev.target.dataset.pri; if (nome === undefined) return;
+  const ts = ev.target.value.trim(), taglio = ts ? Number(ts) : null;
+  if (ts && !(/^d+$/.test(ts) && taglio > 0)) { toast('Priorità di taglio non valida: un numero intero da 1'); render(); return; }
+  const mod = window.CSLogic.riordinaTaglio(st.catInfo, nome, taglio);
+  if (!Object.keys(mod).length) { render(); return; }
+  const lista = st.cfg.categorie.map(c => c.nome in mod ? {...c, taglio: mod[c.nome]} : c);
+  // a category known only from its movements has no config entry yet
+  Object.keys(mod).filter(n => !lista.some(c => c.nome === n)).forEach(n => { const r = st.catInfo.find(x => x.c === n); lista.push({nome: n, gruppo: r.gruppo || '', budget: r.budget || 0, taglio: mod[n], archiviata: !!r.archiviata}); });
+  if (scriviCfg({categorie: lista})) { const n = Object.keys(mod).length - 1; toast(taglio ? `Priorità ${taglio} a ${nome}${n ? `, ${n} altre scalano di uno` : ''}` : `${nome} è fuori classifica`); }
+  else render();
 });
 
 // Pots page (salvadanai). The whole list is written (merge replaces arrays). Balance shown at the end of the current month.

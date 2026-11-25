@@ -420,7 +420,23 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  // Cut priority (taglio, 1 = cut first) is unique among active categories. Returns only the changes {nome: taglio|null}.
+  // A taken number moves the chain below it down by one; removing a number leaves a gap (no renumbering); archived
+  // categories keep their number and stay out of the ranking.
+  function riordinaTaglio(categorie, nome, nuovo) {
+    var me = categorie.filter(function (c) { return c.nome === nome; })[0] || {};
+    var out = {};
+    if ((me.taglio || null) === (nuovo || null)) return out;
+    out[nome] = nuovo || null;
+    if (!nuovo || me.archiviata) return out;
+    var cur = nuovo;
+    categorie.filter(function (c) { return c.nome !== nome && !c.archiviata && c.taglio > 0 && c.taglio >= nuovo; })
+      .sort(function (a, b) { return a.taglio - b.taglio || a.nome.localeCompare(b.nome, 'it'); })
+      .some(function (c) { if (c.taglio > cur) return true; out[c.nome] = ++cur; return false; });
+    return out;
+  }
+
+  var api = {riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();
