@@ -9,6 +9,28 @@
     return n > 0 ? n : null;
   }
 
+  // Strict check for the form fields in euro (parseAmount stays lenient, for the sheet import): digits and ONE decimal
+  // separator, at most 2 decimals, no thousands separator. opts.zero admits 0 and an empty field (0 = "none").
+  // -> {v} or {err}
+  function validaImporto(s, opts) {
+    s = String(s).trim();
+    var zero = opts && opts.zero;
+    if (!s) return zero ? {v: 0} : {err: 'Scrivi un importo'};
+    if (/[.,].*[.,]/.test(s)) return {err: 'Un solo separatore decimale, niente separatore delle migliaia: scrivi 1200 oppure 1200,50'};
+    var m = /^(\d+)(?:[.,](\d+))?$/.exec(s);
+    if (!m) return {err: 'Scrivi solo cifre e un separatore decimale (virgola o punto)'};
+    if (m[2] && m[2].length > 2) return {err: 'Al massimo 2 decimali (niente separatore delle migliaia: 1200, non 1.200)'};
+    var v = parseFloat(m[1] + '.' + (m[2] || '0'));
+    return v > 0 || zero ? {v: v} : {err: 'Scrivi un importo maggiore di zero'};
+  }
+  // Joint share in percent: whole numbers 1..99
+  function validaQuotaJoint(s) {
+    s = String(s).trim();
+    if (!/^\d+$/.test(s)) return {err: 'La quota accetta solo numeri interi da 1 a 99, senza decimali'};
+    var v = +s;
+    return v >= 1 && v <= 99 ? {v: v} : {err: 'La quota va da 1 a 99'};
+  }
+
   // mesi = { 'YYYY-MM': { <id>: {d, n, e, u, c, k, x} } }; x = deleted (tombstone)
   function movs(mesi, ym) {
     return Object.entries(mesi[ym] || {})
@@ -398,7 +420,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

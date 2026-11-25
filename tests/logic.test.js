@@ -593,3 +593,37 @@ test('validaConfig: fondoEmergenze must name an existing pot and have a valid go
   assert.strictEqual(L.validaConfig({...ok, fondoEmergenze: {sottosaldo: 'Nope', obiettivo: 10}}).length, 1);
   assert.strictEqual(L.validaConfig({...ok, fondoEmergenze: {sottosaldo: 'Fondo emergenze', obiettivo: -5}}).length, 1);
 });
+
+// R1: strict form validation (parseAmount stays lenient, for the sheet import)
+test('validaImporto: digits and one decimal separator, max 2 decimals, above zero', () => {
+  assert.deepStrictEqual(L.validaImporto('12,50'), {v: 12.5});
+  assert.deepStrictEqual(L.validaImporto('12.5'), {v: 12.5});
+  assert.deepStrictEqual(L.validaImporto(' 1200 '), {v: 1200});
+  assert.deepStrictEqual(L.validaImporto('0,05'), {v: 0.05});
+});
+test('validaImporto: no thousands separator, no third decimal', () => {
+  assert.match(L.validaImporto('1.200').err, /2 decimali/);
+  assert.match(L.validaImporto('12,345').err, /2 decimali/);
+  assert.match(L.validaImporto('1.234,56').err, /separatore/);
+  assert.match(L.validaImporto('1,2,3').err, /separatore/);
+  assert.match(L.validaImporto('12 €').err, /cifre/);
+  assert.match(L.validaImporto('abc').err, /cifre/);
+  assert.match(L.validaImporto('-5').err, /cifre/);
+});
+test('validaImporto: zero and empty only with the zero option', () => {
+  assert.match(L.validaImporto('0').err, /maggiore di zero/);
+  assert.match(L.validaImporto('0,00').err, /maggiore di zero/);
+  assert.match(L.validaImporto('').err, /importo/);
+  assert.deepStrictEqual(L.validaImporto('0', {zero: true}), {v: 0});
+  assert.deepStrictEqual(L.validaImporto('0,00', {zero: true}), {v: 0});
+  assert.deepStrictEqual(L.validaImporto('', {zero: true}), {v: 0});
+  assert.match(L.validaImporto('1.200', {zero: true}).err, /2 decimali/); // zero allowed never loosens the other rules
+});
+test('validaQuotaJoint: whole numbers from 1 to 99', () => {
+  assert.deepStrictEqual(L.validaQuotaJoint('56'), {v: 56});
+  assert.deepStrictEqual(L.validaQuotaJoint('1'), {v: 1});
+  assert.deepStrictEqual(L.validaQuotaJoint('99'), {v: 99});
+  for (const s of ['0', '100', '-3']) assert.match(L.validaQuotaJoint(s).err, /da 1 a 99/);
+  for (const s of ['56,5', '56.5', 'abc', '']) assert.ok(L.validaQuotaJoint(s).err);
+  assert.match(L.validaQuotaJoint('56,5').err, /interi/);
+});

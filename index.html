@@ -9,16 +9,16 @@
 <style>
 /* layout: registro a sinistra (inserimento + movimenti), budget del mese a destra; su telefono una colonna: inserimento, budget, movimenti */
 :root{
-  --bg:#f2f5f4;--surface:#ffffff;--ink:#15211f;--muted:#5a6966;--line:#d5dedb;--track:#e2e9e6;
+  --bg:#f2f5f4;--surface:#ffffff;--ink:#15211f;--muted:#5a6966;--hint:#66736f;--line:#d5dedb;--track:#e2e9e6;
   --accent:#0f6e64;--accent-ink:#ffffff;--ok:#1b7548;--warn:#9a5b00;--over:#b3261e;
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0f1514;--surface:#172120;--ink:#e5eeeb;--muted:#93a4a0;--line:#2a3836;--track:#243230;
+  --bg:#0f1514;--surface:#172120;--ink:#e5eeeb;--muted:#93a4a0;--hint:#8a9a96;--line:#2a3836;--track:#243230;
   --accent:#4cc2b3;--accent-ink:#06211e;--ok:#5cc98f;--warn:#e6a94a;--over:#ff8f85;color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0f1514;--surface:#172120;--ink:#e5eeeb;--muted:#93a4a0;--line:#2a3836;--track:#243230;
+  --bg:#0f1514;--surface:#172120;--ink:#e5eeeb;--muted:#93a4a0;--hint:#8a9a96;--line:#2a3836;--track:#243230;
   --accent:#4cc2b3;--accent-ink:#06211e;--ok:#5cc98f;--warn:#e6a94a;--over:#ff8f85;color-scheme:dark}
 
 *{box-sizing:border-box}
@@ -57,7 +57,12 @@ button,input,select{font:inherit;color:inherit}
 form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 form .tutta{grid-column:1/-1}
 label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);min-width:0}
-input,select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:16px;width:100%;min-width:0}
+input,select{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:16px;width:100%;min-width:0}
+/* written text is full ink, the placeholder clearly paler (opacity:1 because Firefox dims it by itself) */
+input::placeholder{color:var(--hint);opacity:1}
+input[aria-invalid]{border-color:var(--over)}
+.errc{color:var(--over);font-size:12px}
+.ob{color:var(--over);margin-left:3px}
 #importo{font-family:var(--mono);font-size:22px;font-weight:600}
 .hero{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:2px}
 .hero span{font-size:12px;color:var(--muted)}
@@ -69,6 +74,8 @@ label.chk{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var
 .cfriga .btn{padding:4px 10px}
 .tipo{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .tipo label{flex-direction:row;justify-content:center;padding:9px;font-size:14px;cursor:pointer;color:var(--ink)}
+#altro summary{font-size:14px;font-weight:500;color:var(--muted);padding:8px 2px}
+.tipo.alt{grid-template-columns:repeat(2,1fr);margin-top:8px}
 .tipo input{position:absolute;opacity:0;width:1px;height:1px}
 .tipo label:has(input:checked){background:var(--accent);color:var(--accent-ink);font-weight:600}
 .tipo label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:-4px}
@@ -160,9 +167,10 @@ details summary{cursor:pointer;font-weight:500}
     <section class="box">
       <h2 id="catTitolo">Nuova categoria</h2>
       <form id="catForm" autocomplete="off">
-        <label class="tutta">Nome<input id="catNome" required maxlength="60"></label>
+        <p class="stato tutta">* obbligatorio</p>
+        <label class="tutta"><span>Nome<b class="ob" aria-hidden="true">*</b></span><input id="catNome" required maxlength="60"></label>
         <label>Gruppo<select id="catGruppo"><option value="">Nessuno</option><option>Necessarie</option><option>Non necessarie</option><option>Risparmi</option></select></label>
-        <label>Budget mensile (€)<input id="catBudget" inputmode="decimal" placeholder="0 = nessun budget"></label>
+        <label>Budget mensile (€)<input id="catBudget" inputmode="decimal" data-eur="zero" placeholder="0 = nessun budget"></label>
         <label>Priorità di taglio<input id="catTaglio" inputmode="numeric" placeholder="1 = prima da tagliare"></label>
         <label class="chk"><input type="checkbox" id="catArch">Archiviata</label>
         <label class="tutta" id="catDestBox" hidden>Se la elimini, sposta i movimenti in<select id="catDest"></select></label>
@@ -188,13 +196,14 @@ details summary{cursor:pointer;font-weight:500}
     <section class="box">
       <h2 id="svTitolo">Nuovo salvadanaio</h2>
       <form id="svForm" autocomplete="off">
-        <label class="tutta">Nome<input id="svNome" required maxlength="60"></label>
+        <p class="stato tutta">* obbligatorio</p>
+        <label class="tutta"><span>Nome<b class="ob" aria-hidden="true">*</b></span><input id="svNome" required maxlength="60"></label>
         <label>Gruppo<select id="svGruppo"><option value="">Nessuno</option><option>Necessarie</option><option>Non necessarie</option><option>Risparmi</option></select></label>
-        <label>Conto<select id="svConto"></select></label>
-        <label>Saldo iniziale (€)<input id="svSaldo" inputmode="decimal" placeholder="0"></label>
-        <label>Saldo iniziale alla data<input id="svData" type="date" required></label>
-        <label class="tutta">Obiettivo (€), se c'è<input id="svObiettivo" inputmode="decimal" placeholder="Vuoto = nessuno"></label>
-        <label class="tutta">Quota mensile (€)<input id="svQuota" inputmode="decimal" placeholder="0"></label>
+        <label><span>Conto<b class="ob" aria-hidden="true">*</b></span><select id="svConto"></select></label>
+        <label>Saldo iniziale (€)<input id="svSaldo" inputmode="decimal" data-eur="zero" placeholder="0"></label>
+        <label><span>Saldo iniziale alla data<b class="ob" aria-hidden="true">*</b></span><input id="svData" type="date" required></label>
+        <label class="tutta">Obiettivo (€), se c'è<input id="svObiettivo" inputmode="decimal" data-eur="zero" placeholder="Vuoto = nessuno"></label>
+        <label class="tutta">Quota mensile (€)<input id="svQuota" inputmode="decimal" data-eur="zero" placeholder="0"></label>
         <div class="tutta" id="svVociBox">
           <div class="testa"><b>Voci</b><button class="btn" id="svVoceAgg" type="button">+ Voce</button></div>
           <p class="stato" id="svVociNota">Con almeno una voce la quota mensile è la somma delle voci (importo ÷ mesi alla scadenza) e il campo sopra non conta. Il saldo resta uno solo.</p>
@@ -221,7 +230,8 @@ details summary{cursor:pointer;font-weight:500}
     </section>
     <section class="box">
       <div class="testa"><h2>Stipendio e righe</h2><span class="stato" id="pnStato"></span></div>
-      <label>Stipendio del mese (€)<input id="pnStip" inputmode="decimal" placeholder="0"></label>
+      <p class="stato">* obbligatorio</p>
+      <label><span>Stipendio del mese (€)<b class="ob" aria-hidden="true">*</b></span><input id="pnStip" inputmode="decimal" data-eur placeholder="0"></label>
       <div id="pnRighe" class="gruppo"></div>
       <div class="azioni">
         <button class="btn pri" id="pnSalva" type="button">Salva il piano</button>
@@ -235,7 +245,8 @@ details summary{cursor:pointer;font-weight:500}
   <div class="due" id="pagPermettermelo" hidden>
     <section class="box">
       <h2>Posso permettermelo?</h2>
-      <label>Importo (€)<input id="pmImporto" inputmode="decimal" placeholder="Es. 45" autocomplete="off"></label>
+      <p class="stato">* obbligatorio</p>
+      <label><span>Importo (€)<b class="ob" aria-hidden="true">*</b></span><input id="pmImporto" inputmode="decimal" placeholder="Es. 45" autocomplete="off"></label>
       <label>Categoria<select id="pmCat"></select></label>
       <p class="stato">Conta il residuo del mese scelto in alto. È solo un'indicazione: non scrive niente.</p>
     </section>
@@ -256,7 +267,7 @@ details summary{cursor:pointer;font-weight:500}
     <section class="box">
       <h2>Conti</h2>
       <div class="cfriga" id="contiLista"></div>
-      <form id="contoForm" autocomplete="off"><label class="tutta">Nuovo conto<input id="contoNome" maxlength="40" placeholder="Es. Revolut"></label>
+      <form id="contoForm" autocomplete="off"><p class="stato tutta">* obbligatorio</p><label class="tutta"><span>Nuovo conto<b class="ob" aria-hidden="true">*</b></span><input id="contoNome" maxlength="40" placeholder="Es. Revolut"></label>
         <label class="chk tutta"><input type="checkbox" id="contoJoint">Conto Joint (spese con quota, versamenti della compagna)</label>
         <div class="azioni tutta"><button class="btn pri" type="submit">Aggiungi conto</button></div></form>
     </section>
@@ -265,9 +276,15 @@ details summary{cursor:pointer;font-weight:500}
       <p class="stato">La mia parte delle spese Joint. Vale dalla data indicata; i movimenti già registrati non cambiano.</p>
       <div class="cfriga" id="quoteLista"></div>
       <form id="quotaForm" autocomplete="off">
-        <label>Valida dal<input id="quotaDa" type="date" required></label>
-        <label>Quota (%)<input id="quotaPct" inputmode="decimal" required placeholder="56"></label>
+        <p class="stato tutta">* obbligatorio</p>
+        <label><span>Valida dal<b class="ob" aria-hidden="true">*</b></span><input id="quotaDa" type="date" required></label>
+        <label><span>Quota (%)<b class="ob" aria-hidden="true">*</b></span><input id="quotaPct" inputmode="numeric" required placeholder="Es. 56"></label>
         <div class="azioni tutta"><button class="btn pri" type="submit">Aggiungi quota</button></div></form>
+    </section>
+    <section class="box">
+      <h2>Dati</h2>
+      <p class="stato">Carica un file JSON con <code>mesi</code> (movimenti) e/o <code>config</code> (configurazione), come <code>dati/import-2026.json</code> o <code>dati/config-2027.json</code>. I movimenti già presenti con lo stesso identificativo vengono sovrascritti, gli altri restano. Una configurazione nuova sostituisce le liste di categorie, conti e salvadanai, la quota Joint, le soglie e i piani dei mesi nel file. Il file viene controllato prima di scrivere: se non va, vedi il motivo.</p>
+      <input id="importa" type="file" accept=".json,application/json" aria-label="File da importare">
     </section>
   </div>
 
@@ -276,28 +293,36 @@ details summary{cursor:pointer;font-weight:500}
     <section class="box" id="boxForm">
       <h2 id="formTitolo">Nuovo movimento</h2>
       <form id="form" autocomplete="off">
-        <div class="tipo tutta" role="radiogroup" aria-label="Tipo di movimento">
-          <label><input type="radio" name="tipo" value="u" checked>Spesa</label>
-          <label><input type="radio" name="tipo" value="e">Entrata</label>
-          <label title="Tredicesima, vendite, regali: non entra nel mese, la assegni a una busta"><input type="radio" name="tipo" value="x2">Entrata extra</label>
-          <label><input type="radio" name="tipo" value="g">Giroconto</label>
-          <label title="Versamento della compagna sul Joint: conta solo nel saldo del Joint"><input type="radio" name="tipo" value="vj">Compagna</label>
-          <label title="Soldi che ho prestato a qualcuno"><input type="radio" name="tipo" value="cr">Credito</label>
-          <label title="Chiude un credito aperto"><input type="radio" name="tipo" value="rb">Rimborso</label>
+        <p class="stato tutta">* obbligatorio</p>
+        <div class="tutta">
+          <div class="tipo" role="radiogroup" aria-label="Tipo di movimento">
+            <label><input type="radio" name="tipo" value="u" checked>Spesa</label>
+            <label><input type="radio" name="tipo" value="e">Entrata</label>
+            <label><input type="radio" name="tipo" value="g">Giroconto</label>
+          </div>
+          <details id="altro">
+            <summary id="altroSum">Altro</summary>
+            <div class="tipo alt" role="radiogroup" aria-label="Altri tipi di movimento">
+              <label title="Tredicesima, vendite, regali: non entra nel mese, la assegni a una busta"><input type="radio" name="tipo" value="x2">Entrata extra</label>
+              <label id="tipoVj" title="Versamento della compagna sul Joint: conta solo nel saldo del Joint (compare con un conto Joint)"><input type="radio" name="tipo" value="vj">Compagna</label>
+              <label title="Soldi che ho prestato a qualcuno"><input type="radio" name="tipo" value="cr">Credito</label>
+              <label title="Chiude un credito aperto"><input type="radio" name="tipo" value="rb">Rimborso</label>
+            </div>
+          </details>
         </div>
-        <label class="tutta">Importo (€)<input id="importo" inputmode="decimal" placeholder="0,00" required></label>
-        <label data-per="u e">Categoria<select id="categoria"></select></label>
-        <label class="tutta" data-per="x2" id="destL">Destinazione<select id="dest"></select></label>
+        <label class="tutta"><span>Importo (€)<b class="ob" aria-hidden="true">*</b></span><input id="importo" inputmode="decimal" data-eur placeholder="0,00"></label>
+        <label data-per="u e"><span>Categoria<b data-ob="u" class="ob" aria-hidden="true">*</b></span><select id="categoria"></select></label>
+        <label class="tutta" data-per="x2" id="destL"><span>Destinazione<b class="ob" aria-hidden="true">*</b></span><select id="dest"></select></label>
         <p class="stato tutta" id="destNota" hidden></p>
-        <label data-per="u e x2 g vj cr rb" id="contoL">Conto<select id="conto"></select></label>
-        <label data-per="g">Conto di arrivo<select id="contoA"></select></label>
+        <label data-per="u e x2 g vj cr rb" id="contoL"><span>Conto<b class="ob" aria-hidden="true">*</b></span><select id="conto"></select></label>
+        <label data-per="g"><span>Conto di arrivo<b class="ob" aria-hidden="true">*</b></span><select id="contoA"></select></label>
         <label class="tutta" data-per="u" id="voceL" hidden>Voce del salvadanaio<select id="voce"></select></label>
-        <label class="tutta" data-per="rb">Credito che chiude<select id="credito"></select></label>
-        <label class="tutta" data-per="u">La mia parte, se divisa con altri (€)<input id="parte" inputmode="decimal" placeholder="Vuota = tutto mio"></label>
+        <label class="tutta" data-per="rb"><span>Credito che chiude<b class="ob" aria-hidden="true">*</b></span><select id="credito"></select></label>
+        <label class="tutta" data-per="u">La mia parte, se divisa con altri (€)<input id="parte" inputmode="decimal" data-eur="zero" placeholder="Vuota = tutto mio"></label>
         <p class="stato tutta" id="jointNota" hidden></p>
         <label class="tutta">Nota<input id="nota" placeholder="Es. Spesa, Benzina"></label>
         <label class="tutta" data-per="u e x2 g cr">Etichette<input id="etichette" list="etList" placeholder="Separate da virgola. Es. TCG, Torneo"></label>
-        <label class="tutta">Data<input id="data" type="date" required></label>
+        <label class="tutta"><span>Data<b class="ob" aria-hidden="true">*</b></span><input id="data" type="date" required></label>
         <div class="azioni tutta">
           <button class="btn pri" id="salva" type="submit">Aggiungi</button>
           <button class="btn peric" id="elimina" type="button" hidden>Elimina</button>
@@ -311,11 +336,6 @@ details summary{cursor:pointer;font-weight:500}
       <div class="testa"><h2>Movimenti</h2><span class="stato" id="movConta"></span></div>
       <input id="cerca" type="search" placeholder="Cerca nota, conto o #etichetta" aria-label="Cerca nei movimenti">
       <div class="lista" id="lista"><p class="vuoto">Qui compaiono i movimenti del mese. Tocca una riga per modificarla.</p></div>
-      <details>
-        <summary>Importa movimenti da file</summary>
-        <p class="stato">File JSON con <code>mesi</code> (movimenti) e/o <code>config</code>, come <code>dati/import-2026.json</code> o <code>dati/config-2027.json</code>. I movimenti già presenti con lo stesso identificativo vengono sovrascritti, gli altri restano. Una configurazione nuova sostituisce le liste di categorie, conti e salvadanai.</p>
-        <input id="importa" type="file" accept=".json,application/json" aria-label="File da importare">
-      </details>
     </section>
   </div>
   </div>
@@ -335,8 +355,26 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {saldoSalvadanaio, quotaSalvadanaio, ammanco, parseAmount, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, creditiAperti, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota} = window.CSLogic;
+const {saldoSalvadanaio, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, creditiAperti, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota} = window.CSLogic;
+const {validaImporto, validaQuotaJoint} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
+
+// Field errors sit under the field and block saving until the value is valid. data-eur = euro field (data-eur="zero": 0 and empty allowed).
+function errCampo(el, err) {
+  let p = el.parentElement.querySelector(':scope > .errc');
+  if (!err) { p?.remove(); el.removeAttribute('aria-invalid'); return; }
+  if (!p) { p = document.createElement('small'); p.className = 'errc'; p.setAttribute('role', 'alert'); el.after(p); }
+  p.textContent = err; el.setAttribute('aria-invalid', 'true');
+}
+const leggi = el => { const r = validaImporto(el.value, {zero: el.dataset.eur === 'zero'}); errCampo(el, r.err); return r.err ? null : r.v; }; // euro value, or null (error shown)
+const pulisciErr = root => root.querySelectorAll('.errc').forEach(p => errCampo(p.previousElementSibling, ''));
+// once a field shows an error it is checked again at every key, so the message goes away as soon as the value is fine
+document.addEventListener('input', ev => {
+  const el = ev.target;
+  if (!el.hasAttribute?.('aria-invalid')) return;
+  if (el.id === 'quotaPct') errCampo(el, validaQuotaJoint(el.value).err);
+  else if (el.dataset.eur !== undefined) leggi(el);
+});
 
 const st = {mesi: {}, cfg: cfgNorm({}), ym: todayISO().slice(0, 7), edit: null, catEdit: null, catInfo: [], q: '', pronto: false, cfgPronto: false};
 const ready = () => st.uid && st.pronto && st.cfgPronto;
@@ -439,15 +477,22 @@ function renderForm() {
 }
 
 // show only the fields of the chosen type; Joint note and split field depend on the account
+const ALTRI = ['x2', 'vj', 'cr', 'rb'];
 function aggiorna() {
+  // Compagna is offered only with a Joint account chosen (an edited one keeps it on its own account); if the account changes under it, back to Spesa
+  const vjOk = contoJoint(st.cfg, $('conto').value) || (st.edit?.t === 'vj' && $('conto').value === st.edit.k);
+  $('tipoVj').hidden = !vjOk;
+  if (tipo() === 'vj' && !vjOk && !st.caricando) { document.querySelector('input[name=tipo][value=u]').checked = true; toast('Compagna vale solo con un conto Joint: il tipo è tornato a Spesa', 4000); renderForm(); return; }
   const t = tipo(), joint = t === 'u' && contoJoint(st.cfg, $('conto').value);
+  $('altroSum').textContent = ALTRI.includes(t) ? 'Altro: ' + document.querySelector('input[name=tipo]:checked').parentElement.textContent : 'Altro';
   for (const el of $('form').querySelectorAll('[data-per]')) el.hidden = !el.dataset.per.split(' ').includes(t);
+  for (const b of $('form').querySelectorAll('.ob[data-ob]')) b.hidden = !b.dataset.ob.split(' ').includes(t);
   $('parte').parentElement.hidden = t !== 'u' || joint;
   renderVoce();
   suggerisci(t);
   $('jointNota').hidden = !joint;
   if (joint) {
-    const r = quotaMov(st.cfg, {d: $('data').value, u: parseAmount($('importo').value) || 0, k: $('conto').value}, qFissa());
+    const r = quotaMov(st.cfg, {d: $('data').value, u: validaImporto($('importo').value).v || 0, k: $('conto').value}, qFissa());
     $('jointNota').textContent = r ? `Conto Joint: quota ${r.q}%, la mia parte è ${eur.format(r.p)}.` : 'Conto Joint senza una quota valida a questa data: impostala in Configurazione.';
   }
 }
@@ -456,7 +501,7 @@ function aggiorna() {
 function suggerisci(t) {
   $('destNota').hidden = t !== 'x2';
   if (t !== 'x2') return;
-  const imp = parseAmount($('importo').value), s = imp ? window.CSLogic.destinazioneExtra(st.mesi, st.cfg, {d: $('data').value || todayISO(), e: imp, l: parseEtichette($('etichette').value)}) : null;
+  const imp = validaImporto($('importo').value).v, s = imp ? window.CSLogic.destinazioneExtra(st.mesi, st.cfg, {d: $('data').value || todayISO(), e: imp, l: parseEtichette($('etichette').value)}) : null;
   if (s && !$('dest').dataset.man && [...$('dest').options].some(o => o.value === s.b)) $('dest').value = s.b;
   $('destNota').textContent = s ? `Suggerito: ${s.b}. ${s.motivo}. Scegli tu.` : "Scrivi l'importo per vedere il suggerimento.";
 }
@@ -492,17 +537,21 @@ function setEdit(m) {
   $('elimina').textContent = 'Elimina'; delete $('elimina').dataset.ok;
   const t = !m ? 'u' : TIPI[m.t] ? m.t : m.e ? 'e' : 'u';
   document.querySelector(`input[name=tipo][value=${t}]`).checked = true;
+  pulisciErr($('form'));
+  $('altro').open = ALTRI.includes(t);
   $('etichette').value = (m?.l || []).join(', ');
   $('importo').value = m ? String(m.e || m.u || '').replace('.', ',') : '';
   $('nota').value = m?.n || '';
   $('data').value = m?.d || todayISO();
   $('parte').value = m && m.p != null && !contoJoint(st.cfg, m.k) ? String(m.p).replace('.', ',') : '';
+  st.caricando = true; // the account is set after the options: aggiorna() must not take Compagna away meanwhile
   renderForm(); // options first (they include the movement's own category and accounts), then the values
   $('categoria').value = m?.c || '';
   if (m?.t === 'x2') { $('dest').dataset.man = 1; $('dest').value = m.b || ''; } else delete $('dest').dataset.man; // an edited one keeps its choice
   renderVoce(m?.v || '');
   $('conto').value = m ? m.k || '' : ricorda('conto') || '';
   $('contoA').value = m?.a || ''; $('credito').value = m?.r || '';
+  st.caricando = false;
   aggiorna();
 }
 
@@ -519,9 +568,9 @@ $('form').addEventListener('change', ev => { if (ev.target.name === 'tipo') { de
 
 $('form').addEventListener('submit', async ev => {
   ev.preventDefault();
-  const imp = parseAmount($('importo').value), t = tipo();
+  const imp = leggi($('importo')), t = tipo();
   const fail = (msg, id) => { toast(msg); $(id).focus(); };
-  if (!imp) return fail('Scrivi un importo maggiore di zero', 'importo');
+  if (imp === null) { $('importo').focus(); return; }
   if (!ready()) { toast('Il database non è ancora pronto'); return; }
   const k = $('conto').value, c = t === 'u' || t === 'e' ? $('categoria').value : '', entra = t === 'e' || t === 'x2' || t === 'vj' || t === 'rb', b = t === 'x2' ? $('dest').value : '';
   if (!k) return fail('Scegli il conto', 'conto');
@@ -542,8 +591,9 @@ $('form').addEventListener('submit', async ev => {
     if (!jq) return fail('Nessuna quota del Joint valida a questa data: impostala in Configurazione', 'data');
     Object.assign(m, jq);
   } else if (t === 'u' && $('parte').value.trim()) {
-    const v = $('parte').value.trim(), p = /^0+([.,]0+)?$/.test(v) ? 0 : parseAmount(v);
-    if (p === null || p >= imp) return fail('La mia parte deve essere minore dell\'importo', 'parte');
+    const p = leggi($('parte'));
+    if (p === null) { $('parte').focus(); return; }
+    if (p >= imp) return fail('La mia parte deve essere minore dell\'importo', 'parte');
     m.p = p;
   }
   const ym = m.d.slice(0, 7), id = st.edit?.id || 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -598,9 +648,11 @@ $('contoForm').addEventListener('submit', ev => {
 });
 $('quotaForm').addEventListener('submit', ev => {
   ev.preventDefault();
-  const da = $('quotaDa').value, pct = parseAmount($('quotaPct').value);
-  if (!da || !pct || pct > 100) { toast('Scrivi una quota tra 0 e 100'); $('quotaPct').focus(); return; }
-  if (scriviCfg({quotaJoint: [...(st.cfg.quotaJoint || []).filter(q => q.da !== da), {da, pct}]})) { toast('Quota salvata'); $('quotaForm').reset(); }
+  const da = $('quotaDa').value, r = validaQuotaJoint($('quotaPct').value);
+  errCampo($('quotaPct'), r.err);
+  if (!da) { toast('Scegli da quando vale la quota'); $('quotaDa').focus(); return; }
+  if (r.err) { $('quotaPct').focus(); return; }
+  if (scriviCfg({quotaJoint: [...(st.cfg.quotaJoint || []).filter(q => q.da !== da), {da, pct: r.v}]})) { toast('Quota salvata'); $('quotaForm').reset(); }
 });
 $('quoteLista').addEventListener('click', ev => {
   const da = ev.target.dataset.da; if (!da) return;
@@ -651,6 +703,7 @@ function setCatEdit(c) {
   if (r?.n) $('catNota').textContent = `Usata in ${nMov(r.n)} in tutti gli anni: se la rinomini i movimenti la seguono.${altre.length ? '' : ' Per eliminarla crea prima un\'altra categoria.'}`;
   // no default destination: the user must pick it, a merge of two categories cannot be undone
   $('catDest').innerHTML = '<option value="">Scegli…</option>' + altre.map(c => `<option>${esc(c)}</option>`).join('');
+  pulisciErr($('catForm'));
   $('catNome').value = r ? r.c : '';
   $('catGruppo').value = r?.gruppo || ''; $('catBudget').value = r?.budget > 0 ? String(r.budget).replace('.', ',') : '';
   $('catTaglio').value = r?.taglio ?? ''; $('catArch').checked = !!r?.archiviata;
@@ -661,8 +714,9 @@ $('catForm').addEventListener('submit', ev => {
   if (!nome) { $('catNome').focus(); return; }
   if (!ready()) { toast('Il database non è ancora pronto'); return; }
   if ([...st.cats, ...svLista().map(v => v.nome)].some(c => c !== da && c.toLowerCase() === nome.toLowerCase())) { toast('Esiste già una categoria o un salvadanaio con questo nome'); return; }
-  const bs = $('catBudget').value.trim(), budget = /^0+([.,]0+)?$/.test(bs) || !bs ? 0 : parseAmount(bs), ts = $('catTaglio').value.trim(), taglio = ts ? parseInt(ts, 10) : null;
-  if (budget === null || (ts && !(taglio > 0))) { toast('Budget o priorità di taglio non validi'); return; }
+  const budget = leggi($('catBudget')), ts = $('catTaglio').value.trim(), taglio = ts ? parseInt(ts, 10) : null;
+  if (budget === null) { $('catBudget').focus(); return; }
+  if (ts && !(taglio > 0)) { toast('Priorità di taglio non valida'); $('catTaglio').focus(); return; }
   const nuova = {nome, gruppo: $('catGruppo').value, budget, taglio, archiviata: $('catArch').checked};
   const cfg = {categorie: [...st.cfg.categorie.filter(c => c.nome !== da && c.nome !== nome), nuova]};
   // one batch: a rename must not stay half done between the movements and the config
@@ -718,23 +772,23 @@ let svEditConto = '';
 // One block per voce in the pot form; read back on save. cambio = quota that replaces the computed one from a month.
 const num = x => x == null ? '' : String(x).replace('.', ',');
 function voceRiga(v = {}) {
-  return `<div class="voce"><label class="tutta">Nome voce<input class="vn" maxlength="60" value="${esc(v.nome || '')}"></label>
-    <label>Importo annuale (€)<input class="va" inputmode="decimal" value="${num(v.annuale)}"></label>
-    <label>Scadenza (mese)<input class="vd" type="month" value="${esc(v.data || '')}"></label>
+  return `<div class="voce"><label class="tutta"><span>Nome voce<b class="ob" aria-hidden="true">*</b></span><input class="vn" maxlength="60" value="${esc(v.nome || '')}"></label>
+    <label><span>Importo annuale (€)<b class="ob" aria-hidden="true">*</b></span><input class="va" data-eur inputmode="decimal" value="${num(v.annuale)}"></label>
+    <label><span>Scadenza (mese)<b class="ob" aria-hidden="true">*</b></span><input class="vd" type="month" value="${esc(v.data || '')}"></label>
     <label>Ciclo in mesi (vuoto = 12)<input class="vc" inputmode="numeric" value="${v.cicli || ''}"></label>
     <label>Quota cambia dal mese<input class="vx" type="month" value="${esc(v.cambio?.da || '')}"></label>
-    <label class="tutta">Nuova quota mensile (€)<input class="vq" inputmode="decimal" value="${num(v.cambio?.quota)}"></label>
+    <label class="tutta">Nuova quota mensile (€)<input class="vq" data-eur="zero" inputmode="decimal" value="${num(v.cambio?.quota)}"></label>
     <button class="btn peric tutta" type="button" data-togli>Togli voce</button></div>`;
 }
 const svVociStato = () => { $('svQuota').disabled = !!$('svVoci').children.length; };
 function svLeggiVoci() { // → voci array, or a string with the error
   const out = [];
   for (const r of $('svVoci').children) {
-    const f = c => r.querySelector('.' + c), nome = f('vn').value.trim(), annuale = parseAmount(f('va').value), data = f('vd').value;
-    const ciclo = f('vc').value.trim(), cicli = ciclo ? +ciclo : 0, da = f('vx').value, quota = importo0(f('vq').value);
+    const f = c => r.querySelector('.' + c), nome = f('vn').value.trim(), annuale = leggi(f('va')), data = f('vd').value;
+    const ciclo = f('vc').value.trim(), cicli = ciclo ? +ciclo : 0, da = f('vx').value, quota = leggi(f('vq'));
     if (!nome) return 'Ogni voce ha bisogno di un nome';
     if (out.some(x => x.nome.toLowerCase() === nome.toLowerCase())) return `La voce ${nome} è doppia`;
-    if (!(annuale > 0)) return `Voce ${nome}: scrivi l'importo annuale`;
+    if (annuale === null) return `Voce ${nome}: importo annuale non valido`;
     if (!/^\d{4}-\d{2}$/.test(data)) return `Voce ${nome}: scegli il mese di scadenza`;
     if (ciclo && !(Number.isInteger(cicli) && cicli > 0)) return `Voce ${nome}: il ciclo è un numero di mesi`;
     if (!!da !== !!f('vq').value.trim()) return `Voce ${nome}: per il cambio servono mese e nuova quota`;
@@ -755,6 +809,7 @@ function setSvEdit(nome) {
   const n = v ? st.nSv?.[v.nome] || 0 : 0;
   $('svElimina').disabled = n > 0; $('svNota').hidden = !n;
   if (n) $('svNota').textContent = `Usato in ${nMov(n)}: per eliminarlo sposta prima quei movimenti su un'altra categoria.`;
+  pulisciErr($('svForm'));
   $('svNome').value = v?.nome || ''; $('svNome').readOnly = !!v;
   $('svGruppo').value = v?.gruppo || '';
   $('svSaldo').value = v ? String(v.saldoIniziale?.importo ?? 0).replace('.', ',') : '';
@@ -764,7 +819,6 @@ function setSvEdit(nome) {
   $('svVoci').innerHTML = (v?.voci || []).map(voceRiga).join(''); svVociStato();
   renderSv(svLista()); $('svConto').value = v?.conto || '';
 }
-const importo0 = s => { s = s.trim(); return !s || /^0+([.,]0+)?$/.test(s) ? 0 : parseAmount(s); };
 $('svForm').addEventListener('submit', ev => {
   ev.preventDefault();
   const nome = $('svNome').value.trim(), da = st.svEdit;
@@ -773,9 +827,8 @@ $('svForm').addEventListener('submit', ev => {
   if (!da && [...st.cats, ...svLista().map(v => v.nome)].some(c => c.toLowerCase() === nome.toLowerCase())) { toast('Esiste già una categoria o un salvadanaio con questo nome'); return; }
   const voci = svLeggiVoci();
   if (typeof voci === 'string') { toast(voci); return; }
-  const importo = importo0($('svSaldo').value), quota = voci.length ? 0 : importo0($('svQuota').value), conto = $('svConto').value;
-  const obiettivo = importo0($('svObiettivo').value);
-  if (importo === null || quota === null || obiettivo === null) { toast('Saldo o quota non validi'); return; }
+  const importo = leggi($('svSaldo')), quota = voci.length ? 0 : leggi($('svQuota')), conto = $('svConto').value, obiettivo = leggi($('svObiettivo'));
+  if (importo === null || quota === null || obiettivo === null) { toast('Controlla gli importi: uno non è valido'); return; }
   if (!conto) { toast('Scegli il conto del salvadanaio'); $('svConto').focus(); return; }
   const nuovo = {nome, gruppo: $('svGruppo').value, conto, saldoIniziale: {data: $('svData').value, importo}, quota, ...(voci.length ? {voci} : {}), ...(obiettivo ? {obiettivo} : {})};
   if (scriviCfg({salvadanai: [...svLista().filter(v => v.nome !== nome), nuovo]})) { toast(da ? 'Salvadanaio salvato' : `Salvadanaio aggiunto: ${nome}`); setSvEdit(null); render(); }
@@ -794,7 +847,7 @@ $('svLista').addEventListener('click', ev => {
 // The inputs hold the draft; a month without a saved plan starts from the latest earlier plan, else from the current budgets and quotas.
 const pnInputs = () => [...$('pnRighe').querySelectorAll('input')];
 function pnLeggi(severo) { // → {stipendio, righe} from the inputs; null on a bad amount when severo, else bad amounts count as 0
-  const v = el => { const x = importo0(el.value); return x === null && !severo ? 0 : x; };
+  const v = el => severo ? leggi(el) : validaImporto(el.value, {zero: true}).v ?? 0; // live summary: a bad amount counts as 0, the save shows the error
   const stipendio = v($('pnStip')), righe = pnInputs().map(i => ({nome: i.dataset.n, importo: v(i)}));
   return stipendio === null || righe.some(r => r.importo === null) ? null : {stipendio, righe};
 }
@@ -804,7 +857,7 @@ function pnCarica(p) {
   let h = '', g = null;
   for (const r of pi.righe) {
     if (r.gruppo !== g) { g = r.gruppo; h += `${h ? '</div>' : ''}<div class="gruppo"><h3>${esc(g || 'Senza gruppo')}</h3>`; }
-    h += `<label class="imp"><span>${esc(r.nome)}${r.tipo === 'salvadanaio' ? ' <small>salvadanaio</small>' : ''}</span><input data-n="${esc(r.nome)}" inputmode="decimal" value="${num(r.importo)}"></label>`;
+    h += `<label class="imp"><span>${esc(r.nome)}${r.tipo === 'salvadanaio' ? ' <small>salvadanaio</small>' : ''}</span><input data-n="${esc(r.nome)}" data-eur="zero" inputmode="decimal" value="${num(r.importo)}"></label>`;
   }
   $('pnRighe').innerHTML = h ? h + '</div>' : '<p class="vuoto">Nessun budget né salvadanaio. Imposta i budget in Categorie e i salvadanai in Salvadanai.</p>';
 }
@@ -829,7 +882,6 @@ $('pnCorr').addEventListener('click', () => { pnCarica({stipendio: pnLeggi(false
 $('pnSalva').addEventListener('click', () => {
   const p = pnLeggi(true);
   if (!p) { toast('Controlla gli importi: uno non è valido'); return; }
-  if (!(p.stipendio > 0)) { toast('Scrivi lo stipendio del mese'); $('pnStip').focus(); return; }
   if (scriviCfg({piani: {[st.ym]: p}})) { toast('Piano salvato'); render(); }
 });
 
@@ -839,7 +891,8 @@ function renderPm() {
   const sel = $('pmCat'), v = sel.value;
   const nomi = categorieAttive(st.cfg).filter(c => c.budget > 0).map(c => c.nome).sort((a, b) => a.localeCompare(b, 'it'));
   sel.innerHTML = nomi.map(n => `<option>${esc(n)}</option>`).join(''); if (nomi.includes(v)) sel.value = v;
-  const imp = parseAmount($('pmImporto').value), out = $('pmRis');
+  const raw = $('pmImporto').value, rv = validaImporto(raw), imp = rv.err ? null : rv.v, out = $('pmRis');
+  errCampo($('pmImporto'), raw.trim() ? rv.err : ''); // nothing typed yet is not an error
   if (!nomi.length) { out.innerHTML = '<p class="vuoto">Nessuna categoria con budget. Imposta i budget in Categorie.</p>'; return; }
   if (imp === null) { out.innerHTML = '<p class="vuoto">Scrivi un importo e scegli la categoria.</p>'; return; }
   const r = window.CSLogic.permettermelo(st.mesi, st.cfg, st.ym, sel.value, imp);
