@@ -366,3 +366,49 @@ test('quotaVoce: a voce without a valid month gives 0, not NaN', () => {
   assert.strictEqual(L.quotaVoce({nome: 'X', annuale: 80}, '2027-01', '2027-01'), 0);
   assert.strictEqual(L.saldoSalvadanaio({}, svV([{nome: 'X', annuale: 80, data: 'boh'}]), '2027-03'), 0);
 });
+
+// ---- piano del mese (2.3): made-up numbers ----
+const cfgP = {
+  categorie: [
+    {nome: 'Affitto', gruppo: 'Necessarie', budget: 500, joint: true},
+    {nome: 'Svago', gruppo: 'Non necessarie', budget: 100},
+    {nome: 'Vecchia', gruppo: 'Non necessarie', budget: 40, archiviata: true},
+    {nome: 'TCG', gruppo: 'Non necessarie'},
+  ],
+  conti: [{nome: 'Revolut'}, {nome: 'Joint', joint: true}],
+  salvadanai: [
+    {nome: 'Auto', gruppo: 'Necessarie', conto: 'Revolut', quota: 50, saldoIniziale: {data: '2027-01-01', importo: 0}},
+    {nome: 'Viaggi', gruppo: 'Risparmi', conto: 'Joint', quota: 60, saldoIniziale: {data: '2027-01-01', importo: 0}},
+  ],
+};
+
+test('piano: rows come from budgets and pot quotas, grouped with totals and % of the salary; resta = salary - assigned', () => {
+  const p = L.piano(cfgP, '2027-01', {stipendio: 1000});
+  assert.deepStrictEqual(p.righe.map(r => r.nome), ['Affitto', 'Auto', 'Svago', 'Viaggi']); // archived and no-budget rows left out
+  assert.strictEqual(p.totale, 710);
+  assert.strictEqual(p.resta, 290);
+  assert.deepStrictEqual(p.gruppi.map(g => [g.gruppo, g.totale, g.pct]), [['Necessarie', 550, 0.55], ['Non necessarie', 100, 0.1], ['Risparmi', 60, 0.06]]);
+  assert.strictEqual(p.joint, 560); // Affitto (flag) + Viaggi (pot on a Joint account): informational, not added to totale
+});
+
+test('piano: edited amounts win; an overspent plan gives a negative resta', () => {
+  const p = L.piano(cfgP, '2027-01', {stipendio: 600, righe: [{nome: 'Svago', importo: 30}, {nome: 'Ghost', importo: 999}]});
+  assert.strictEqual(p.righe.find(r => r.nome === 'Svago').importo, 30);
+  assert.strictEqual(p.totale, 640);
+  assert.strictEqual(p.resta, -40);
+});
+
+test('piano: no salary gives 0% and resta negative; cents do not drift', () => {
+  const p = L.piano({categorie: [{nome: 'A', gruppo: 'Necessarie', budget: 0.1}, {nome: 'B', gruppo: 'Necessarie', budget: 0.2}]}, '2027-01', {});
+  assert.strictEqual(p.totale, 0.3);
+  assert.strictEqual(p.gruppi[0].pct, 0);
+  assert.strictEqual(p.resta, -0.3);
+});
+
+test('pianoPrecedente: the latest saved plan before the month, else empty', () => {
+  const cfg = {piani: {'2027-01': {stipendio: 1}, '2027-03': {stipendio: 3}}};
+  assert.strictEqual(L.pianoPrecedente(cfg, '2027-02').stipendio, 1);
+  assert.strictEqual(L.pianoPrecedente(cfg, '2027-03').stipendio, 1);
+  assert.strictEqual(L.pianoPrecedente(cfg, '2027-04').stipendio, 3);
+  assert.deepStrictEqual(L.pianoPrecedente({}, '2027-01'), {});
+});

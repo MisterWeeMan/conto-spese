@@ -44,7 +44,7 @@ Regole: un movimento sul Joint ha `u` intero e `p = u × q`. Una spesa divisa co
 - `fondoEmergenze`: `{conto, sottosaldo, obiettivo}`.
 - `investimenti`: `{versato, valore}`, `valore` aggiornato a mano.
 - `magazzinoTCG`: valore delle carte, a mano.
-- `piani/<YYYY-MM>`: stipendio del mese e divisione tra budget e salvadanai.
+- `piani`: mappa `{<YYYY-MM>: {stipendio, righe: [{nome, importo}]}}`, un campo di `spese_config/main`: stipendio del mese e importo assegnato a ogni budget e salvadanaio. Le righe sono un elenco (non una mappa) perché i nomi possono contenere caratteri vietati nelle chiavi, e un salvataggio le sostituisce tutte. Un mese senza piano parte dall'ultimo piano precedente, altrimenti da budget e quote correnti. Il piano non cambia budget né quote: li registra per quel mese. Il giroconto al Joint non è una riga (solo "di cui Joint", informativo).
 - `chiusure/<YYYY-MM>`: scelte su avanzi e sfori.
 - `revisioni`: data e decisioni di ogni revisione dei conti.
 

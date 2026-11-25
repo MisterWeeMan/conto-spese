@@ -214,6 +214,44 @@
     return Math.round(-min * 100) / 100 + 0; // + 0: no -0
   }
 
+  // Plan of month ym (spec: piani/<YYYY-MM>): p = {stipendio, righe: [{nome, importo}]}. One row per budget category
+  // (not archived, budget > 0) and per pot; the amount is the edited one in p.righe, else the current monthly budget / pot quota.
+  // Rows are ordered by gruppo (Necessarie, Non necessarie, Risparmi, then others). totale = sum of rows, resta = stipendio - totale
+  // (negative = plan overspent), pct = share of the stipendio (0 without one). joint = rows that go through the Joint account
+  // (category flag `joint`, pot on a Joint account): informational, already inside totale.
+  // shortcut: the Joint transfer is not a row of its own (strategia A8 gives it as a figure, and its Joint part of mixed
+  // categories like Abbonamenti cannot be derived); saving a plan does not change the pot quotas the balances use.
+  function piano(cfg, ym, p) {
+    p = p || {};
+    var r2 = function (x) { return Math.round(x * 100) / 100; }, mod = {};
+    (p.righe || []).forEach(function (r) { mod[r.nome] = r.importo; });
+    var righe = [];
+    (cfg.categorie || []).forEach(function (c) {
+      if (!c.archiviata && c.budget > 0) righe.push({nome: c.nome, tipo: 'budget', gruppo: c.gruppo || '', importo: mod[c.nome] != null ? mod[c.nome] : c.budget, joint: !!c.joint});
+    });
+    (cfg.salvadanai || []).forEach(function (v) {
+      righe.push({nome: v.nome, tipo: 'salvadanaio', gruppo: v.gruppo || '', importo: mod[v.nome] != null ? mod[v.nome] : quotaSalvadanaio(v, ym), joint: contoJoint(cfg, v.conto)});
+    });
+    var ordine = ['Necessarie', 'Non necessarie', 'Risparmi'], pos = function (g) { var i = ordine.indexOf(g); return i < 0 ? ordine.length : i; };
+    righe = righe.map(function (r, i) { return {r: r, i: i}; })
+      .sort(function (a, b) { return pos(a.r.gruppo) - pos(b.r.gruppo) || a.i - b.i; }).map(function (x) { return x.r; });
+    var stip = p.stipendio || 0, tot = 0, joint = 0, gr = {}, gruppi = [];
+    righe.forEach(function (r) {
+      tot += r.importo; if (r.joint) joint += r.importo;
+      var g = gr[r.gruppo];
+      if (!g) { g = gr[r.gruppo] = {gruppo: r.gruppo, totale: 0}; gruppi.push(g); }
+      g.totale = r2(g.totale + r.importo);
+    });
+    gruppi.forEach(function (g) { g.pct = stip > 0 ? g.totale / stip : 0; });
+    return {stipendio: stip, righe: righe, gruppi: gruppi, totale: r2(tot), resta: r2(stip - tot), joint: r2(joint)};
+  }
+
+  // The latest saved plan before month ym (cfg.piani = {'YYYY-MM': plan}), to start a new month from; {} when there is none.
+  function pianoPrecedente(cfg, ym) {
+    var k = Object.keys(cfg.piani || {}).filter(function (x) { return x < ym; }).sort().pop();
+    return k ? cfg.piani[k] : {};
+  }
+
   // Every category: configured (object fields kept) or used by a live movement.
   // n = live movements using it, anno = those in the given year ('YYYY').
   function categorie(mesi, cfg, anno) {
@@ -241,7 +279,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, saldoSalvadanaio: saldoSalvadanaio, ammanco: ammanco, soglieSuperate: soglieSuperate, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, ammanco: ammanco, soglieSuperate: soglieSuperate, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();
