@@ -20,9 +20,9 @@
   function net(m) { return (m.e || 0) - (m.u || 0); }
 
   // My part of a movement: p if set, else u (e for income). Transfers (g), partner top-ups (vj)
-  // and credits (cr) are not mine.
+  // credits (cr), refunds (rb) and extra income (x2) are not mine.
   function mia(m) {
-    if (m.t === 'g' || m.t === 'vj' || m.t === 'cr' || m.t === 'rb') return 0;
+    if (m.t === 'g' || m.t === 'vj' || m.t === 'cr' || m.t === 'rb' || m.t === 'x2') return 0;
     return m.p != null ? m.p : (m.u || m.e || 0);
   }
 
@@ -122,6 +122,31 @@
     return {righe: righe, senza: senza, ent: ent, usc: usc};
   }
 
+  // Month figures with MONTHLY budgets, no carry-over (spec rules 2-4). cfg.categorie = [{nome, gruppo, budget, archiviata}];
+  // the budget of a Joint category is already my share, and mia() already reads p. righe: categories with budget and
+  // not archived; senza: other categories used in the month; spendibile: sum of the residuals (overspent counts negative).
+  // shortcut: duplicate category names are not checked, the Joint flag is unused (budget = my share, as in strategia-2027),
+  // overspent budgets are not clamped; revisit if the spec says otherwise.
+  // An income row with a category lowers its speso (old-style refund); extra income never reaches here (mia = 0).
+  function meseCalc(mesi, cfg, ym) {
+    var speso = {};
+    movs(mesi, ym).forEach(function (m) {
+      if (!m.c) return;
+      var v = m.u ? mia(m) : -mia(m);
+      speso[m.c] = Math.round(((speso[m.c] || 0) + v) * 100) / 100;
+    });
+    var righe = [], spendibile = 0, conBudget = {};
+    (cfg.categorie || []).forEach(function (c) {
+      if (c.archiviata || !(c.budget > 0)) return;
+      var s = speso[c.nome] || 0, residuo = Math.round((c.budget - s) * 100) / 100;
+      conBudget[c.nome] = 1; spendibile += residuo;
+      righe.push({c: c.nome, gruppo: c.gruppo, budget: c.budget, speso: s, residuo: residuo, pct: s / c.budget});
+    });
+    var senza = Object.keys(speso).filter(function (c) { return !conBudget[c] && speso[c]; })
+      .map(function (c) { return {c: c, speso: speso[c]}; }).sort(function (a, b) { return b.speso - a.speso; });
+    return {righe: righe, senza: senza, spendibile: Math.round(spendibile * 100) / 100};
+  }
+
   // Every category: configured, with a budget, or used by a live movement.
   // n = live movements using it, anno = those in the given year ('YYYY').
   function categorie(mesi, cfg, anno) {
@@ -150,7 +175,7 @@
     return out;
   }
 
-  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, calcola: calcola, categorie: categorie, rinomina: rinomina};
+  var api = {parseAmount: parseAmount, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contiAttivi: contiAttivi, categorieAttive: categorieAttive, saldi: saldi, calcola: calcola, meseCalc: meseCalc, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

@@ -218,3 +218,56 @@ test('a partner top-up lands only in the Joint balance, not in the totals', () =
   const m = {'2027-03': {j: {d: '2027-03-05', e: 100, c: 'Cena', k: 'Revolut Joint', t: 'vj'}}};
   assert.strictEqual(L.calcola(m, {budget: {Cena: 1200}}, '2027-03').ent, 0);
 });
+
+test('mia: an extra income (x2) is not mine', () => {
+  assert.strictEqual(L.mia({t: 'x2', e: 500}), 0);
+});
+
+const cfgMese = {categorie: [
+  {nome: 'Affitto', gruppo: 'Necessarie', budget: 100, joint: true},
+  {nome: 'Svago', gruppo: 'Extra', budget: 50},
+  {nome: 'Vecchia', gruppo: 'Extra', budget: 30, archiviata: true},
+  {nome: 'TCG', gruppo: 'Extra'},
+]};
+const mesiMese = {
+  '2027-03': {
+    a: {d: '2027-03-01', u: 100, p: 56, q: 56, c: 'Affitto', k: 'Joint'},
+    b: {d: '2027-03-02', u: 20, c: 'Svago'},
+    c: {d: '2027-03-03', u: 10, c: 'Svago', x: 1},                    // deleted
+    d: {d: '2027-03-04', u: 200, k: 'A', a: 'B', t: 'g'},             // transfer
+    e: {d: '2027-03-05', e: 150, k: 'Joint', t: 'vj'},                // partner top-up
+    f: {d: '2027-03-06', e: 500, c: 'Svago', t: 'x2'},                // extra income
+    g: {d: '2027-03-07', e: 20, c: 'Svago', t: 'rb', r: 'zz'},        // refund
+    h: {d: '2027-03-08', u: 12, c: 'TCG'},
+    i: {d: '2027-03-09', u: 60, p: 20, c: 'Svago'},                   // split: 40 is credit
+  },
+  '2027-02': {j: {d: '2027-02-10', u: 90, c: 'Svago'}},               // other month: no carry-over
+};
+
+test('meseCalc: monthly budget, no carry-over, only my share', () => {
+  const r = L.meseCalc(mesiMese, cfgMese, '2027-03');
+  assert.deepStrictEqual(r.righe.map(x => x.c), ['Affitto', 'Svago']); // archived and no-budget out
+  assert.deepStrictEqual(r.righe[0], {c: 'Affitto', gruppo: 'Necessarie', budget: 100, speso: 56, residuo: 44, pct: 0.56});
+  assert.deepStrictEqual(r.righe[1], {c: 'Svago', gruppo: 'Extra', budget: 50, speso: 40, residuo: 10, pct: 0.8});
+});
+
+test('meseCalc: spendibile is the sum of residuals, an overspent budget counts negative', () => {
+  assert.strictEqual(L.meseCalc(mesiMese, cfgMese, '2027-03').spendibile, 54);
+  const over = {'2027-03': {a: {d: '2027-03-01', u: 70, c: 'Svago'}}};
+  assert.strictEqual(L.meseCalc(over, cfgMese, '2027-03').spendibile, 100 - 20);
+});
+
+test('meseCalc: categories without budget are listed apart', () => {
+  assert.deepStrictEqual(L.meseCalc(mesiMese, cfgMese, '2027-03').senza, [{c: 'TCG', speso: 12}]);
+});
+
+test('meseCalc: empty month', () => {
+  const r = L.meseCalc({}, cfgMese, '2027-04');
+  assert.strictEqual(r.spendibile, 150);
+  assert.deepStrictEqual(r.senza, []);
+});
+
+test('meseCalc: an old-style income with a category lowers its speso', () => {
+  const r = L.meseCalc({'2027-03': {a: {d: '2027-03-01', u: 30, c: 'Svago'}, b: {d: '2027-03-02', e: 10, c: 'Svago'}}}, cfgMese, '2027-03');
+  assert.strictEqual(r.righe[1].speso, 20);
+});
