@@ -195,6 +195,7 @@ details summary{cursor:pointer;font-weight:500}
         <label data-spesa>Gruppo<select id="catGruppo"><option value="">Nessuno</option><option>Necessarie</option><option>Non necessarie</option><option>Risparmi</option></select></label>
         <label data-spesa>Budget mensile (€)<input id="catBudget" inputmode="decimal" data-eur="zero" placeholder="0 = nessun budget"></label>
         <label data-spesa>Priorità di taglio<input id="catTaglio" inputmode="numeric" placeholder="1 = prima da tagliare"></label>
+        <label class="chk tutta" data-spesa><input type="checkbox" id="catJoint">Joint (il budget è sul conto Joint, già la mia quota)</label>
         <label class="chk"><input type="checkbox" id="catArch">Archiviata</label>
         <label class="tutta" id="catDestBox" hidden>Se la elimini, sposta i movimenti in<select id="catDest"></select></label>
         <p class="stato tutta" id="catNota" hidden></p>
@@ -544,17 +545,18 @@ function render() {
   if (st.pronto) {
     const cq = $('catCerca').value.trim().toLowerCase();
     const cv = st.catInfo.filter(r => r.c.toLowerCase().includes(cq));
-    const o = st.catOrd, v = r => o.k === 'nome' ? r.c : o.k === 'taglio' ? r.taglio || null : o.k === 'archiviata' ? !!r.archiviata : o.k === 'tipo' ? tipoCat(r) : o.k === 'budget' ? r.budget || 0 : o.k === 'n' ? r.n : r.gruppo || '';
+    const o = st.catOrd, v = r => o.k === 'nome' ? r.c : o.k === 'taglio' ? r.taglio || null : o.k === 'archiviata' ? !!r.archiviata : o.k === 'joint' ? !!r.joint : o.k === 'tipo' ? tipoCat(r) : o.k === 'budget' ? r.budget || 0 : o.k === 'n' ? r.n : r.gruppo || '';
     cv.sort((x, y) => { // numbers: no priority always last; text with the Italian collation
       const p = v(x), q = v(y);
       if (o.k === 'taglio' && (p === null || q === null)) return p === q ? 0 : p === null ? 1 : -1;
       return o.dir * (typeof p === 'string' ? p.localeCompare(q, 'it') : p - q);
     });
     $('catConta').textContent = `${cq ? `${cv.length} di ${st.catInfo.length}` : st.catInfo.length} categorie · movimenti in tutti gli anni`;
-    const COL = [['nome', 'Nome', ''], ['tipo', 'Tipo', ''], ['gruppo', 'Gruppo', ''], ['budget', 'Budget mensile', 'd'], ['taglio', 'Priorità', 'd'], ['archiviata', 'Archiviata', ''], ['n', 'Movimenti', 'd']];
+    const COL = [['nome', 'Nome', ''], ['tipo', 'Tipo', ''], ['gruppo', 'Gruppo', ''], ['budget', 'Budget mensile', 'd'], ['taglio', 'Priorità', 'd'], ['joint', 'Joint', ''], ['archiviata', 'Archiviata', ''], ['n', 'Movimenti', 'd']];
     $('catLista').innerHTML = cv.length ? `<table class="tab"><thead><tr>${COL.map(([k, l, c]) => `<th scope="col" class="${c}" aria-sort="${o.k === k ? (o.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" data-ord="${k}">${l}${o.k === k ? (o.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr></thead><tbody>${cv.map(r => `<tr data-cat="${esc(r.c)}" class="${st.catEdit === r.c ? 'sel' : ''}">
       <td><button type="button" class="nm" aria-label="Modifica ${esc(r.c)}">${esc(r.c)}</button></td><td>${tipoCat(r)}</td><td>${esc(r.gruppo || '–')}</td><td class="d">${r.budget > 0 ? eur.format(r.budget) : '–'}</td>
       <td class="d">${r.entrata ? '–' : `<input class="pri" inputmode="numeric" value="${r.taglio > 0 ? r.taglio : ''}" placeholder="–" aria-label="Priorità di taglio di ${esc(r.c)}" data-pri="${esc(r.c)}">`}</td>
+      <td>${r.entrata ? '–' : `<input type="checkbox" aria-label="Joint: ${esc(r.c)}" data-joint="${esc(r.c)}"${r.joint ? ' checked' : ''}>`}</td>
       <td>${r.archiviata ? 'Sì' : 'No'}</td><td class="d">${r.n}</td></tr>`).join('')}</tbody></table>`
       : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
@@ -898,7 +900,7 @@ function setCatEdit(c) {
   pulisciErr($('catForm'));
   $('catNome').value = r ? r.c : '';
   $('catGruppo').value = r?.gruppo || ''; $('catBudget').value = r?.budget > 0 ? String(r.budget).replace('.', ',') : '';
-  $('catTaglio').value = r?.taglio ?? ''; $('catArch').checked = !!r?.archiviata;
+  $('catTaglio').value = r?.taglio ?? ''; $('catArch').checked = !!r?.archiviata; $('catJoint').checked = !!r?.joint;
   $('catEntr').checked = !!r?.entrata; $('catFin').checked = !!r?.finanzia; catTipo();
 }
 // income categories have no budget, priority or group: the spending fields go away, "finanzia il mese" appears
@@ -917,7 +919,7 @@ $('catForm').addEventListener('submit', ev => {
   const en = $('catEntr').checked, budget = en ? 0 : leggi($('catBudget')), ts = en ? '' : $('catTaglio').value.trim(), taglio = ts ? parseInt(ts, 10) : null;
   if (budget === null) { $('catBudget').focus(); return; }
   if (ts && !(taglio > 0)) { toast('Priorità di taglio non valida'); $('catTaglio').focus(); return; }
-  const nuova = {nome, gruppo: en ? '' : $('catGruppo').value, budget, taglio, archiviata: $('catArch').checked, entrata: en, finanzia: en && $('catFin').checked};
+  const nuova = {nome, gruppo: en ? '' : $('catGruppo').value, budget, taglio, joint: !en && $('catJoint').checked, archiviata: $('catArch').checked, entrata: en, finanzia: en && $('catFin').checked};
   // unique cut priority: the other categories shift down when the number is taken
   const prev = st.catInfo.find(x => x.c === da) || {};
   const mod = window.CSLogic.riordinaTaglio([...st.catInfo.filter(c => c.c !== da), {nome: da || nome, taglio: prev.taglio, archiviata: nuova.archiviata}], da || nome, taglio);
@@ -957,6 +959,14 @@ $('catLista').addEventListener('click', ev => {
 
 // Priority typed in a table cell: unique number, the ones below shift (riordinaTaglio); one write of the whole list.
 $('catLista').addEventListener('change', ev => {
+  const jn = ev.target.dataset.joint;
+  if (jn !== undefined) { // Joint flag in a cell: same write as the priority, only this category changes
+    const joint = ev.target.checked, r = st.catInfo.find(x => x.c === jn);
+    const lista = st.cfg.categorie.some(c => c.nome === jn) ? st.cfg.categorie.map(c => c.nome === jn ? {...c, joint} : c)
+      : [...st.cfg.categorie, {nome: jn, gruppo: r.gruppo || '', budget: r.budget || 0, taglio: r.taglio ?? null, archiviata: !!r.archiviata, joint}]; // known only from its movements
+    if (scriviCfg({categorie: lista})) toast(joint ? `${jn} è sul Joint` : `${jn} non è più sul Joint`); else render();
+    return;
+  }
   const nome = ev.target.dataset.pri; if (nome === undefined) return;
   const ts = ev.target.value.trim(), taglio = ts ? Number(ts) : null;
   if (ts && !(/^\d+$/.test(ts) && taglio > 0)) { toast('Priorità di taglio non valida: un numero intero da 1'); render(); return; }

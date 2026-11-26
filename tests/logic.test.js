@@ -428,6 +428,14 @@ test('piano: rows come from budgets and pot quotas, grouped with totals and % of
   assert.strictEqual(p.joint, 560); // Affitto (flag) + Viaggi (pot on a Joint account): informational, not added to totale
 });
 
+test('piano: the Joint share follows the category flag (R4), the total does not', () => {
+  const con = (f) => ({...cfgP, categorie: cfgP.categorie.map(c => c.nome in f ? {...c, joint: f[c.nome]} : c)});
+  const off = L.piano(con({Affitto: false}), '2027-01', {stipendio: 1000}), on = L.piano(con({Svago: true}), '2027-01', {stipendio: 1000});
+  assert.strictEqual(off.joint, 60); // only the pot on the Joint account is left
+  assert.strictEqual(on.joint, 660); // Affitto + Svago + Viaggi
+  assert.strictEqual(off.totale, 710); assert.strictEqual(on.totale, 710);
+});
+
 test('piano: edited amounts win; an overspent plan gives a negative resta', () => {
   const p = L.piano(cfgP, '2027-01', {stipendio: 600, righe: [{nome: 'Svago', importo: 30}, {nome: 'Ghost', importo: 999}]});
   assert.strictEqual(p.righe.find(r => r.nome === 'Svago').importo, 30);
