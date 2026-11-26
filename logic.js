@@ -192,6 +192,12 @@
     (c.controlli || []).forEach(function (x) {
       if (!day.test(x.d || '') || !real(x.d) || conti.indexOf(x.k) < 0 || !num(x.banca) || !num(x.strumento) || !num(x.diff)) err.push('Check ' + x.d + ' ' + x.k + ' is not valid');
     });
+    (c.obiettivi || []).forEach(function (o) {
+      if (!o.nome || !num(o.attuale) || o.attuale < 0 || !num(o.desiderato) || o.desiderato < 0) err.push('Goal ' + (o.nome || '?') + ' is not valid');
+    });
+    (c.revisioni || []).forEach(function (r) {
+      if (!trimReg.test(r.trimestre || '') || !day.test(r.data || '') || !real(r.data)) err.push('Review ' + r.trimestre + ' is not valid');
+    });
     var inv = c.investimenti;
     if (inv && conti.indexOf(inv.conto) < 0) err.push('investimenti: account ' + inv.conto + ' does not exist');
     (inv && inv.valore || []).forEach(function (v) { if (!day.test(v.d || '') || !real(v.d) || !num(v.importo) || v.importo < 0) err.push('investimenti: value ' + v.d + ' is not valid'); });
@@ -866,7 +872,86 @@
     return {mesi: ms, ritmo: ritmo, budget: budget, salvadanai: salvadanai, scadenze: sc, scoperte: sc.filter(function (x) { return x.manca > 0.005; }).length, patrimonio: pat};
   }
 
-  var api = {scadenze: scadenze, proiezioneAnno: proiezioneAnno, saldoEtichetta: saldoEtichetta, azzeraPiano: azzeraPiano, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, mancaRispettoPiano: mancaRispettoPiano, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  // ---- 4.3: quarterly review of the accounts (B5) ----
+
+  var PRIMA_REVISIONE = '2027-Q1'; // quarters before it are test data: no reminder
+  var trimReg = /^\d{4}-Q[1-4]$/;
+  function trimestreDi(ym) { return ym.slice(0, 4) + '-Q' + Math.ceil(+ym.slice(5, 7) / 3); }
+  function trimestreMesi(t) { var m = (+t.slice(6) - 1) * 3 + 1; return [0, 1, 2].map(function (i) { return t.slice(0, 4) + '-' + ('0' + (m + i)).slice(-2); }); }
+  function trimestreFine(t) { var l = trimestreMesi(t)[2]; return l + '-' + (l.slice(5) === '03' || l.slice(5) === '12' ? '31' : '30'); }
+  // The quarter to review on day oggi: the one ending within 7 days (or already ended and not yet followed by the next window), else the last concluded.
+  // shortcut: from 7 days before a quarter ends the previous one is forgotten, even if it was never recorded.
+  function trimestreDefault(oggi) {
+    var q = trimestreDi(oggi.slice(0, 7));
+    return giorniTra(oggi, trimestreFine(q)) <= 7 ? q : trimestreDi(meseDelta(trimestreMesi(q)[0], -1));
+  }
+  // Home reminder: the quarter to review when its review is not recorded and it is not before the first one; null otherwise. No push notification.
+  function promemoriaRevisione(cfg, oggi) {
+    var t = trimestreDefault(oggi);
+    if (t < PRIMA_REVISIONE || (cfg.revisioni || []).some(function (r) { return r.trimestre === t; })) return null;
+    return {trimestre: t, fine: trimestreFine(t), giorni: giorniTra(oggi, trimestreFine(t))};
+  }
+  // The buckets a goal of that name matches (it only suggests where to edit the quota: nothing is changed by itself).
+  function obiettivoCollegato(cfg, nome) {
+    var n = String(nome).toLowerCase(), out = [];
+    if (categorieAttive(cfg).some(function (c) { return c.nome.toLowerCase() === n; })) out.push('categoria');
+    if ((cfg.salvadanai || []).some(function (v) { return v.nome.toLowerCase() === n; })) out.push('salvadanaio');
+    return out;
+  }
+  // Figures of quarter t from the app's own data. Months without movements are {ym, dati: false}: nothing is invented.
+  // → {trimestre, mesiConDati, mesi: [{ym, dati, stipendio, speso, avanzo (null without a salary), gruppi, risparmio}], sforamenti: categories over budget
+  // in 2+ months, cuscinetto {inizio, fine, movimento} | null, fondo {ok, ...}, joint {pct, da, speso, miaParte, n}, obiettivi}.
+  // avanzo = salary received - spent in budget categories (pots are not in it). shortcut: no check that the salary arrived in the month it is for.
+  function revisioneTrimestre(mesi, cfg, t) {
+    var r2 = function (x) { return Math.round(x * 100) / 100; }, ms = trimestreMesi(t), sforo = {};
+    var out = ms.map(function (ym) {
+      if (!movs(mesi, ym).length) return {ym: ym, dati: false};
+      var mc = meseCalc(mesi, cfg, ym), speso = 0;
+      mc.righe.forEach(function (r) { speso += r.speso; });
+      chiusuraProposta(mesi, cfg, ym).voci.forEach(function (v) { if (v.tipo === 'sforo') { var s = sforo[v.c] || (sforo[v.c] = {c: v.c, volte: 0, totale: 0}); s.volte++; s.totale = r2(s.totale + v.importo); } });
+      var rg = riepilogoGruppi(mesi, cfg, ym);
+      return {ym: ym, dati: true, stipendio: mc.stipendio, speso: r2(speso), avanzo: mc.stipendio > 0 ? r2(mc.stipendio - speso) : null,
+        gruppi: rg.gruppi, stipendioRif: rg.stipendio, risparmio: tassoRisparmio(mesi, cfg, ym)};
+    });
+    var cus = (cfg.salvadanai || []).filter(function (v) { return v.nome === ((cfg.extra || {}).cuscinetto || 'Cuscinetto'); })[0], cuscinetto = null;
+    if (cus && cus.saldoIniziale && cus.saldoIniziale.data.slice(0, 7) <= ms[0]) {
+      var i = saldoSalvadanaio(mesi, cus, meseDelta(ms[0], -1), cfg.chiusure), f = saldoSalvadanaio(mesi, cus, ms[2], cfg.chiusure);
+      cuscinetto = {nome: cus.nome, inizio: i, fine: f, movimento: r2(f - i)};
+    }
+    var fe = cfg.fondoEmergenze, fc = fe && (cfg.conti || []).filter(function (c) { return c.nome === fe.conto; })[0], fondo = {ok: false};
+    if (fc && fc.saldoIniziale && fc.saldoIniziale.data <= ms[0] + '-01') {
+      var ini = saldi(mesi, cfg, meseDelta(ms[0], -1) + '-31')[fc.nome], fin = saldi(mesi, cfg, ms[2] + '-31')[fc.nome], ver = 0;
+      ms.forEach(function (ym) { movs(mesi, ym).forEach(function (m) { ver += versamento(m, fc.nome); }); });
+      fondo = {ok: true, conto: fc.nome, inizio: ini, fine: fin, versamenti: r2(ver), rendimento: r2(fin - ini - ver), obiettivo: fe.obiettivo || 0, sopra: fe.obiettivo > 0 ? r2(fin - fe.obiettivo) : null};
+    }
+    var fine = trimestreFine(t), q = null;
+    (cfg.quotaJoint || []).forEach(function (x) { if (x.da <= fine && (!q || x.da > q.da)) q = x; });
+    var joint = {pct: q ? q.pct : null, da: q ? q.da : null, speso: 0, miaParte: 0, n: 0};
+    ms.forEach(function (ym) { movs(mesi, ym).forEach(function (m) { if (m.u && !m.t && contoJoint(cfg, m.k)) { joint.speso += m.u; joint.miaParte += mia(m); joint.n++; } }); });
+    joint.speso = r2(joint.speso); joint.miaParte = r2(joint.miaParte);
+    return {trimestre: t, mesiConDati: out.filter(function (m) { return m.dati; }).length, mesi: out,
+      sforamenti: Object.keys(sforo).map(function (k) { return sforo[k]; }).filter(function (s) { return s.volte >= 2; }).sort(function (a, b) { return b.volte - a.volte || a.c.localeCompare(b.c, 'it'); }),
+      cuscinetto: cuscinetto, fondo: fondo, joint: joint,
+      obiettivi: (cfg.obiettivi || []).map(function (o) { return {nome: o.nome, attuale: o.attuale, desiderato: o.desiderato, distanza: r2(o.desiderato - o.attuale), collegato: obiettivoCollegato(cfg, o.nome)}; })};
+  }
+  // Problems of a review before it is saved: r = {trimestre, data, decisioni, obiettivi: [{nome, azione: 'alzo' (a, da) | 'rimando'}]}.
+  function validaRevisione(r, cfg) {
+    var err = [], day = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, nomi = (cfg.obiettivi || []).map(function (o) { return o.nome; });
+    if (!trimReg.test(r.trimestre || '')) err.push('Quarter is not valid');
+    if (!day.test(r.data || '') || isNaN(Date.parse(r.data)) || new Date(r.data).toISOString().slice(0, 10) !== r.data) err.push('Date is not valid');
+    (r.obiettivi || []).forEach(function (o) {
+      if (nomi.indexOf(o.nome) < 0) err.push('Goal ' + o.nome + ' does not exist');
+      if (o.azione !== 'alzo' && o.azione !== 'rimando') err.push('Goal ' + o.nome + ': action is not valid');
+      if (o.azione === 'alzo' && !(typeof o.a === 'number' && isFinite(o.a) && o.a > 0 && /^\d{4}-(0[1-9]|1[0-2])$/.test(o.da || ''))) err.push('Goal ' + o.nome + ': amount or month is not valid');
+    });
+    return err;
+  }
+  // The list of reviews with r in it: replaces the one of the same quarter, sorted by quarter.
+  function revisioniCon(lista, r) {
+    return (lista || []).filter(function (x) { return x.trimestre !== r.trimestre; }).concat([r]).sort(function (a, b) { return a.trimestre < b.trimestre ? -1 : a.trimestre > b.trimestre ? 1 : 0; });
+  }
+
+  var api = {trimestreDi: trimestreDi, trimestreMesi: trimestreMesi, trimestreFine: trimestreFine, trimestreDefault: trimestreDefault, promemoriaRevisione: promemoriaRevisione, obiettivoCollegato: obiettivoCollegato, revisioneTrimestre: revisioneTrimestre, validaRevisione: validaRevisione, revisioniCon: revisioniCon, scadenze: scadenze, proiezioneAnno: proiezioneAnno, saldoEtichetta: saldoEtichetta, azzeraPiano: azzeraPiano, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, mancaRispettoPiano: mancaRispettoPiano, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

@@ -25,8 +25,8 @@ Termini dello strumento, in italiano. Gli stessi nomi vanno usati nel codice e n
 - **Avvio senza storico**: a gennaio 2027 si parte da zero, senza importare il 2026; il foglio resta in sola lettura come archivio.
 - **Fondo emergenze**: obiettivo fisso, su Trade Republic. Conta nel patrimonio, non nello spendibile. Ogni uso richiede una nota.
 - **Fondo TCG**: salvadanaio alimentato solo dalle entrate con etichetta TCG o nella categoria Vendita carte.
-- **Revisione dei conti**: controllo programmato (fine marzo 2027, poi ogni 3 mesi: fine giugno, fine settembre, fine dicembre) con numeri veri. Registra cosa ho deciso.
-- **Obiettivo di quota**: aumento desiderato (per esempio investimenti e rata auto). Non è una regola automatica.
+- **Revisione dei conti**: controllo programmato ogni 3 mesi (fine marzo 2027, poi fine giugno, fine settembre, fine dicembre) con numeri veri dell'app: avanzo di ogni mese, cuscinetto, gruppi, sfori ripetuti, rendimento del fondo emergenze, quota Joint, obiettivi. Registra cosa ho deciso (testo e, per ogni obiettivo, «alzo» o «rimando»). Da 7 giorni prima della scadenza la home lo ricorda, finché non è registrata. Non cambia nulla da sola.
+- **Obiettivo di quota**: aumento desiderato di una quota mensile (per esempio investimenti da 50 a 100 €, rata auto da 150 a 200 €): nome, importo attuale e desiderato. Non è una regola automatica: lo decido alla revisione dei conti e poi cambio io la quota in Salvadanai o Categorie.
 
 ## Conti e movimenti
 

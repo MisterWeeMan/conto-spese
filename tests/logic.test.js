@@ -1336,3 +1336,114 @@ test('proiezioneAnno: no accounts means no net worth projection; a voce due this
   const s = L.scadenze({}, {salvadanai: [due]}, '2026-12-10'); // due this month: balance of the month (12 x 5 = 60), 40 missing
   assert.deepStrictEqual(s.map(x => [x.data, x.saldoPrevisto, x.manca, x.mesi]), [['2026-12', 60, 40, 0]]);
 });
+
+// ---- 4.3: quarterly review (revisione dei conti), made-up data ----
+test('trimestre helpers: id, months, last day', () => {
+  assert.strictEqual(L.trimestreDi('2027-05'), '2027-Q2');
+  assert.deepStrictEqual(L.trimestreMesi('2027-Q4'), ['2027-10', '2027-11', '2027-12']);
+  assert.strictEqual(L.trimestreFine('2027-Q1'), '2027-03-31');
+  assert.strictEqual(L.trimestreFine('2027-Q2'), '2027-06-30');
+});
+
+const rvCfg = {
+  categorie: [{nome: 'Stipendio', entrata: true, finanzia: true}, {nome: 'Affitto', gruppo: 'Necessarie', budget: 500}, {nome: 'Svago', gruppo: 'Non necessarie', budget: 100}],
+  salvadanai: [{nome: 'Cuscinetto', gruppo: 'Risparmi', conto: 'A', quota: 20, saldoIniziale: {data: '2027-01-01', importo: 0}}],
+  conti: [{nome: 'A', saldoIniziale: {data: '2027-01-01', importo: 0}}, {nome: 'Joint', joint: true, saldoIniziale: {data: '2027-01-01', importo: 0}},
+    {nome: 'TRF', saldoIniziale: {data: '2027-01-01', importo: 1000}}],
+  fondoEmergenze: {conto: 'TRF', obiettivo: 1000}, quotaJoint: [{da: '2027-01-01', pct: 60}],
+  obiettivi: [{nome: 'Svago', attuale: 100, desiderato: 120}, {nome: 'Rata auto', attuale: 150, desiderato: 200}]
+};
+const rvMese = (ym, svago) => ({[ym + 'a']: {d: ym + '-05', e: 1000, k: 'A', c: 'Stipendio'}, [ym + 'b']: {d: ym + '-06', u: 500, k: 'A', c: 'Affitto'}, [ym + 'c']: {d: ym + '-07', u: svago, k: 'A', c: 'Svago'}});
+
+test('revisioneTrimestre: a full quarter gives monthly surplus, overspends and the buffer', () => {
+  const mesi = {'2027-01': rvMese('2027-01', 150), '2027-02': rvMese('2027-02', 90), '2027-03': rvMese('2027-03', 130)};
+  const r = L.revisioneTrimestre(mesi, rvCfg, '2027-Q1');
+  assert.strictEqual(r.trimestre, '2027-Q1');
+  assert.strictEqual(r.mesiConDati, 3);
+  assert.deepStrictEqual(r.mesi.map(m => m.avanzo), [350, 410, 370]); // salary - spent in budget categories
+  assert.deepStrictEqual(r.mesi.map(m => m.stipendio), [1000, 1000, 1000]);
+  assert.deepStrictEqual(r.sforamenti, [{c: 'Svago', volte: 2, totale: 80}]);
+  const g = r.mesi[0].gruppi.find(x => x.gruppo === 'Non necessarie');
+  assert.strictEqual(g.speso, 150); assert.strictEqual(g.pctSpeso, 0.15);
+  assert.strictEqual(r.cuscinetto.inizio, 0); assert.strictEqual(r.cuscinetto.fine, 60); assert.strictEqual(r.cuscinetto.movimento, 60); // opening balance 0 + 3 quotas of 20
+  assert.strictEqual(r.mesi[0].risparmio.risparmio, 20);
+});
+
+test('revisioneTrimestre: a missing month is marked, nothing invented', () => {
+  const mesi = {'2027-01': rvMese('2027-01', 50), '2027-03': rvMese('2027-03', 50)};
+  const r = L.revisioneTrimestre(mesi, rvCfg, '2027-Q1');
+  assert.strictEqual(r.mesiConDati, 2);
+  assert.deepStrictEqual(r.mesi.map(m => m.dati), [true, false, true]);
+  assert.strictEqual(r.mesi[1].avanzo, undefined);
+  assert.deepStrictEqual(r.sforamenti, []);
+});
+
+test('revisioneTrimestre: no data at all', () => {
+  const r = L.revisioneTrimestre({}, rvCfg, '2027-Q1');
+  assert.strictEqual(r.mesiConDati, 0);
+  assert.ok(r.mesi.every(m => !m.dati));
+  assert.strictEqual(r.fondo.ok, true); // the fund balance exists from its opening balance, with no interest
+  assert.strictEqual(r.fondo.rendimento, 0);
+});
+
+test('revisioneTrimestre: emergency fund interest = end - start - net transfers; above goal', () => {
+  const mesi = {'2027-02': {t1: {d: '2027-02-10', t: 'g', k: 'A', a: 'TRF', u: 100}, i1: {d: '2027-03-31', e: 12.5, k: 'TRF', c: 'Interessi', n: 'interest'}},
+    '2027-03': {t2: {d: '2027-03-02', t: 'g', k: 'TRF', a: 'A', u: 30}}};
+  const f = L.revisioneTrimestre(mesi, rvCfg, '2027-Q1').fondo;
+  assert.strictEqual(f.inizio, 1000); assert.strictEqual(f.fine, 1082.5); assert.strictEqual(f.versamenti, 70);
+  assert.strictEqual(f.rendimento, 12.5); assert.strictEqual(f.sopra, 82.5);
+  // no opening balance: not enough data
+  const senza = {...rvCfg, conti: rvCfg.conti.map(c => c.nome === 'TRF' ? {nome: 'TRF'} : c)};
+  assert.strictEqual(L.revisioneTrimestre(mesi, senza, '2027-Q1').fondo.ok, false);
+  assert.strictEqual(L.revisioneTrimestre(mesi, {...rvCfg, fondoEmergenze: undefined}, '2027-Q1').fondo.ok, false);
+});
+
+test('revisioneTrimestre: Joint share in force and Joint spending of the quarter', () => {
+  const mesi = {'2027-01': {j1: {d: '2027-01-10', u: 100, p: 60, q: 60, k: 'Joint', c: 'Svago'}, j2: {d: '2027-03-10', u: 50, p: 30, q: 60, k: 'Joint', c: 'Svago'}, v: {d: '2027-01-11', e: 40, t: 'vj', k: 'Joint'}}};
+  const j = L.revisioneTrimestre(mesi, rvCfg, '2027-Q1').joint;
+  assert.strictEqual(j.pct, 60); assert.strictEqual(j.da, '2027-01-01');
+  assert.strictEqual(j.speso, 150); assert.strictEqual(j.miaParte, 90); assert.strictEqual(j.n, 2);
+  assert.strictEqual(L.revisioneTrimestre(mesi, {...rvCfg, quotaJoint: []}, '2027-Q1').joint.pct, null);
+});
+
+test('revisioneTrimestre: goals with distance and linked bucket', () => {
+  const o = L.revisioneTrimestre({}, rvCfg, '2027-Q1').obiettivi;
+  assert.deepStrictEqual(o.map(x => [x.nome, x.distanza]), [['Svago', 20], ['Rata auto', 50]]);
+  assert.deepStrictEqual(o[0].collegato, ['categoria']);
+  assert.deepStrictEqual(o[1].collegato, []);
+  assert.deepStrictEqual(L.obiettivoCollegato(rvCfg, 'cuscinetto'), ['salvadanaio']);
+});
+
+test('trimestreDefault and promemoriaRevisione: before and after the due date, already recorded', () => {
+  assert.strictEqual(L.trimestreDefault('2027-03-23'), '2026-Q4'); // more than 7 days before the end: last concluded
+  assert.strictEqual(L.trimestreDefault('2027-03-24'), '2027-Q1'); // 7 days before
+  assert.strictEqual(L.trimestreDefault('2027-04-10'), '2027-Q1');
+  assert.strictEqual(L.trimestreDefault('2027-06-30'), '2027-Q2');
+  assert.strictEqual(L.promemoriaRevisione({}, '2027-03-23'), null);
+  assert.deepStrictEqual(L.promemoriaRevisione({}, '2027-03-24'), {trimestre: '2027-Q1', fine: '2027-03-31', giorni: 7});
+  assert.strictEqual(L.promemoriaRevisione({}, '2027-04-10').trimestre, '2027-Q1'); // after the due date, until recorded
+  assert.strictEqual(L.promemoriaRevisione({revisioni: [{trimestre: '2027-Q1', data: '2027-03-30', decisioni: ''}]}, '2027-04-10'), null);
+  assert.strictEqual(L.promemoriaRevisione({}, '2026-12-28'), null); // the first review is 2027-Q1: test data before it
+  assert.strictEqual(L.promemoriaRevisione({revisioni: [{trimestre: '2027-Q1', data: '2027-03-30', decisioni: ''}]}, '2027-06-25').trimestre, '2027-Q2');
+});
+
+test('validaRevisione and revisioniCon', () => {
+  const ok = {trimestre: '2027-Q1', data: '2027-03-30', decisioni: 'Wait', obiettivi: [{nome: 'Svago', azione: 'alzo', a: 120, da: '2027-04'}, {nome: 'Rata auto', azione: 'rimando'}]};
+  assert.deepStrictEqual(L.validaRevisione(ok, rvCfg), []);
+  assert.ok(L.validaRevisione({...ok, trimestre: '2027-Q5'}, rvCfg).length);
+  assert.ok(L.validaRevisione({...ok, data: '2027-13-01'}, rvCfg).length);
+  assert.ok(L.validaRevisione({...ok, obiettivi: [{nome: 'Nope', azione: 'rimando'}]}, rvCfg).length);
+  assert.ok(L.validaRevisione({...ok, obiettivi: [{nome: 'Svago', azione: 'alzo', a: 0, da: '2027-04'}]}, rvCfg).length);
+  assert.ok(L.validaRevisione({...ok, obiettivi: [{nome: 'Svago', azione: 'boh'}]}, rvCfg).length);
+  const lista = L.revisioniCon([{trimestre: '2027-Q2', data: '2027-06-30', decisioni: 'b'}, {trimestre: '2027-Q1', data: '2027-03-30', decisioni: 'a'}], {...ok, decisioni: 'new'});
+  assert.deepStrictEqual(lista.map(r => r.trimestre), ['2027-Q1', '2027-Q2']); // replaces the same quarter, sorted
+  assert.strictEqual(lista[0].decisioni, 'new');
+});
+
+test('validaConfig checks obiettivi and revisioni', () => {
+  assert.deepStrictEqual(L.validaConfig(rvCfg), []);
+  assert.ok(L.validaConfig({...rvCfg, obiettivi: [{nome: 'X', attuale: -1, desiderato: 5}]}).length);
+  assert.ok(L.validaConfig({...rvCfg, obiettivi: [{nome: 'X', attuale: 1, desiderato: 'a'}]}).length);
+  assert.ok(L.validaConfig({...rvCfg, revisioni: [{trimestre: 'bad', data: '2027-03-30'}]}).length);
+  assert.deepStrictEqual(L.validaConfig({...rvCfg, revisioni: [{trimestre: '2027-Q1', data: '2027-03-30', decisioni: 'x', obiettivi: []}]}), []); // a valid review passes
+});
