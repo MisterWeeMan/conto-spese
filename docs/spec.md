@@ -82,6 +82,7 @@ I vecchi campi `gruppi`, `colori` e `budget` annuale vengono ignorati.
 14. **Tasso di risparmio** = (PAC + cuscinetto + viaggi di coppia) / stipendio. I salvadanai di spese programmate non contano.
 15. **Fondo emergenze**: mesi coperti = saldo ÷ necessarie mensili. Ogni uso richiede una nota.
 16. **Scadenze**: per ogni voce con data, avvisa se alla scadenza il saldo previsto non basta.
+17. **Saldo dell'etichetta** (4.1, `saldoEtichetta(mesi, etichetta, periodo)`): entrate − uscite dei movimenti vivi con quell'etichetta (senza distinguere maiuscole) nel periodo (tutto, `YYYY`, `YYYY-MM`). Uscite = la mia parte (sul Joint conta `p`); entrate = `e`, di qualsiasi categoria (anche non finanziano il mese, anche `x2`); giroconti, versamenti della compagna, prestiti e rimborsi restano fuori. Dettaglio per sotto-etichetta (le altre etichette dello stesso movimento; un movimento con più etichette conta in ognuna, quindi le righe non si sommano al totale) e per categoria. È un'informazione: non è un budget e non entra nello spendibile né nel piano. Il Fondo TCG resta un salvadanaio a parte (regola 6, `sottoZero`): il saldo dell'etichetta e quello del fondo possono differire (una spesa pagata dal fondo ha la categoria Fondo TCG; conta nell'etichetta solo se porta l'etichetta).
 
 ## Schermate
 
@@ -99,7 +100,7 @@ Stesse funzioni su telefono e PC. Sul telefono, un solo flusso veloce per regist
 - **Patrimonio** (3.4, pagina `#patrimonio`): patrimonio oggi con i componenti, andamento a fine mese (grafico e tabella; parziale dove manca il saldo iniziale di un conto). In home sotto lo spendibile.
 - **Configurazione:** categorie, gruppi, etichette, conti, quota del Joint, soglie, obiettivi, salvadanai e voci.
 - **Revisione dei conti** (ogni 3 mesi: fine marzo, fine giugno, fine settembre, fine dicembre): schermata con i numeri veri e un campo per registrare le decisioni.
-- **TCG:** saldo dell'etichetta (somma di entrate meno uscite dei movimenti con l'etichetta TCG, senza valore di magazzino) e fondo TCG.
+- **TCG** (4.1, pagina `#tcg`, menu **TCG**): selettore del periodo (tutto, anno, mese); saldo dell'etichetta TCG con entrate e uscite; per mese (o per anno se il periodo è tutto) con un link ai movimenti del mese filtrati per `#TCG`; dettaglio per sotto-etichetta e per categoria; il Fondo TCG con il suo saldo e, se è sotto zero, quanto resta da recuperare con le prossime vendite. Sola lettura, nessuna scrittura.
 
 ## Avvio senza storico
 

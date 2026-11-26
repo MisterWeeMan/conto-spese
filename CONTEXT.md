@@ -39,6 +39,7 @@ Termini dello strumento, in italiano. Gli stessi nomi vanno usati nel codice e n
 - **Credito**: soldi che qualcuno mi deve. Non è una mia spesa. Una spesa divisa si chiude con un rimborso; un prestito si chiude quando i rimborsi (anche a rate) arrivano all'importo.
 - **Credito iniziale**: il credito residuo al giorno del passaggio, registrato come credito senza conto (non muove nessun saldo) con importo, data e nota. Non è patrimonio.
 - **Etichetta**: dettaglio dentro una categoria o ambito trasversale (TCG). Mostra quanto pesa; nessun budget proprio.
+- **Saldo dell'etichetta**: entrate meno uscite dei movimenti con quell'etichetta in un periodo (per TCG: quanto guadagno o perdo con le carte). Informazione, non budget: non entra nello spendibile né nel piano. Non è il saldo del **Fondo TCG**, che è un salvadanaio.
 
 ## Joint
 

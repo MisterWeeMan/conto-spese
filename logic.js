@@ -103,6 +103,35 @@
     return list.filter(function (m) { return (m.l || []).some(function (x) { return x.toLowerCase() === l; }); });
   }
 
+  // Balance of a label (4.1), information only: not a budget, it never enters the spendibile or the plan. periodo = '' (all), 'YYYY' or 'YYYY-MM'.
+  // Live movements carrying l (ignoring case): entrate = e, uscite = my part (mia, so the Joint counts my share); transfers, partner top-ups,
+  // loans and refunds are left out; an income of any kind (also x2 or a category that does not fund the month) counts. saldo = entrate - uscite.
+  // sotto = the other labels of the same movements ({l: '' = only l}), categorie = by category ('' = none); a movement with several labels
+  // counts under each, so these lists do not add up to the total. Each list is sorted by size of the balance.
+  function saldoEtichetta(mesi, l, periodo) {
+    var r = {entrate: 0, uscite: 0, saldo: 0, n: 0, sotto: [], categorie: []}, low = String(l).toLowerCase(), sotto = {}, cat = {};
+    var c2 = function (x) { return Math.round(x * 100) / 100; };
+    var add = function (o, k, e, u) { var t = o[k] = o[k] || {entrate: 0, uscite: 0, n: 0}; t.entrate = c2(t.entrate + e); t.uscite = c2(t.uscite + u); t.n++; };
+    Object.keys(mesi).filter(function (ym) { return ym.indexOf(periodo || '') === 0; }).forEach(function (ym) {
+      conEtichetta(movs(mesi, ym), l).forEach(function (m) {
+        if (m.t === 'g' || m.t === 'vj' || m.t === 'cr' || m.t === 'rb') return;
+        var e = m.e > 0 ? m.e : 0, u = m.u > 0 ? mia(m) : 0;
+        if (!e && !u) return;
+        r.entrate = c2(r.entrate + e); r.uscite = c2(r.uscite + u); r.n++;
+        var altre = (m.l || []).filter(function (x) { return x.toLowerCase() !== low; });
+        (altre.length ? altre : ['']).forEach(function (x) { add(sotto, x, e, u); });
+        add(cat, m.c || '', e, u);
+      });
+    });
+    r.saldo = c2(r.entrate - r.uscite);
+    var lista = function (o, key) {
+      return Object.keys(o).map(function (k) { var t = o[k]; t.saldo = c2(t.entrate - t.uscite); t[key] = k; return t; })
+        .sort(function (a, b) { return Math.abs(b.saldo) - Math.abs(a.saldo) || (a[key] < b[key] ? -1 : 1); });
+    };
+    r.sotto = lista(sotto, 'l'); r.categorie = lista(cat, 'c');
+    return r;
+  }
+
   // Joint share (pct) in force on date 'YYYY-MM-DD': the entry with the latest `da` not after it, else null.
   function quotaJoint(cfg, data) {
     var best = null;
@@ -739,7 +768,7 @@
     return {stipendio: s.stipendio, pac: p, cuscinetto: cus, viaggi: via, risparmio: tot, tasso: s.stipendio > 0 ? tot / s.stipendio : null, minimo: minimo, sopra: s.stipendio > 0 && tot * 100 >= minimo * s.stipendio};
   }
 
-  var api = {azzeraPiano: azzeraPiano, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, mancaRispettoPiano: mancaRispettoPiano, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {saldoEtichetta: saldoEtichetta, azzeraPiano: azzeraPiano, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, mancaRispettoPiano: mancaRispettoPiano, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

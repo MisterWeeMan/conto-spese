@@ -1195,3 +1195,58 @@ test('azzeraPiano counts months and live movements to delete and the config part
   assert.deepStrictEqual([n.campi, n.controlli, n.piani], [['chiusure'], 0, 0]);
   assert.deepStrictEqual(L.azzeraPiano({}, {}, {controlli: true, chiusure: true, piani: true}), {mesi: 0, mov: 0, controlli: 0, chiusure: 0, piani: 0, campi: [], nomiMesi: []});
 });
+
+// 4.1: saldo dell'etichetta (made-up data)
+const mesiTcg = {
+  '2027-03': {
+    a1: {d: '2027-03-05', u: 30, c: 'TCG', k: 'Revolut', l: ['TCG', 'Torneo']},
+    a2: {d: '2027-03-12', u: 80, p: 40, q: 50, c: 'TCG', k: 'Joint', l: ['tcg', 'Judge']},
+    a3: {d: '2027-03-20', e: 120, c: 'Vendita carte', k: 'Revolut', l: ['TCG', 'Compravendita'], t: 'x2', b: 'Fondo TCG'},
+    a4: {d: '2027-03-21', u: 500, a: 'Risparmi', k: 'Revolut', t: 'g', l: ['TCG']},
+    a5: {d: '2027-03-22', e: 40, k: 'Joint', t: 'vj', l: ['TCG']},
+    a6: {d: '2027-03-23', u: 9, c: 'Spesa', k: 'Revolut', l: ['Altro']},
+    a7: {d: '2027-03-24', u: 15, c: 'TCG', k: 'Revolut', l: ['TCG'], x: 1},
+  },
+  '2027-04': {
+    b1: {d: '2027-04-02', u: 20, c: 'TCG', k: 'Revolut', l: ['TCG']},
+    b2: {d: '2027-04-09', e: 100, c: 'Vendita carte', k: 'Revolut', l: ['TCG', 'Compravendita']},
+  },
+  '2028-01': {c1: {d: '2028-01-03', u: 10, c: 'TCG', k: 'Revolut', l: ['TCG']}},
+};
+
+test('saldoEtichetta: income minus expense, my share on the Joint, transfers/top-ups/deleted left out', () => {
+  const r = L.saldoEtichetta(mesiTcg, 'TCG', '2027-03');
+  assert.deepStrictEqual([r.entrate, r.uscite, r.saldo, r.n], [120, 70, 50, 3]);
+});
+
+test('saldoEtichetta: period is all, a year or a month; the label ignores case', () => {
+  assert.strictEqual(L.saldoEtichetta(mesiTcg, 'tcg').saldo, 50 + 80 - 10);
+  assert.strictEqual(L.saldoEtichetta(mesiTcg, 'TCG', '2027').saldo, 50 + 80);
+  assert.strictEqual(L.saldoEtichetta(mesiTcg, 'TCG', '2027-04').saldo, 80);
+  assert.deepStrictEqual(L.saldoEtichetta(mesiTcg, 'TCG', '2029'), {entrate: 0, uscite: 0, saldo: 0, n: 0, sotto: [], categorie: []});
+});
+
+test('saldoEtichetta: detail by the other labels of the same movement and by category', () => {
+  const r = L.saldoEtichetta(mesiTcg, 'TCG', '2027-03');
+  assert.deepStrictEqual(r.sotto.map(x => [x.l, x.saldo, x.n]), [['Compravendita', 120, 1], ['Judge', -40, 1], ['Torneo', -30, 1]]);
+  assert.deepStrictEqual(r.categorie.map(x => [x.c, x.entrate, x.uscite, x.saldo]), [['Vendita carte', 120, 0, 120], ['TCG', 0, 70, -70]]);
+  const solo = L.saldoEtichetta(mesiTcg, 'TCG', '2027-04');
+  assert.deepStrictEqual(solo.sotto.map(x => [x.l, x.saldo]), [['Compravendita', 100], ['', -20]]);
+});
+
+test('saldoEtichetta: a loss is a negative balance; any other label works', () => {
+  assert.strictEqual(L.saldoEtichetta({'2027-05': {z: {d: '2027-05-01', u: 25, l: ['Gara']}}}, 'Gara').saldo, -25);
+});
+
+test('Fondo TCG: a card sale feeds it, below zero it is to be won back, and the suggestion says how much', () => {
+  const cfg = {salvadanai: [{nome: 'Fondo TCG', gruppo: 'Non necessarie', conto: 'Revolut', saldoIniziale: {data: '2027-03-01', importo: 0}, quota: 0, sottoZero: true}]};
+  const mesi = {'2027-03': {s: {d: '2027-03-02', u: 60, c: 'Fondo TCG', k: 'Revolut'}}};
+  const sv = cfg.salvadanai[0];
+  assert.strictEqual(L.saldoSalvadanaio(mesi, sv, '2027-03'), -60);
+  const dest = L.destinazioneExtra(mesi, cfg, {d: '2027-03-20', e: 25, l: ['TCG']});
+  assert.strictEqual(dest.b, 'Fondo TCG');
+  assert.match(dest.motivo, /mancano 60,00/);
+  mesi['2027-03'].v = {d: '2027-03-20', e: 25, c: 'Vendita carte', b: 'Fondo TCG', k: 'Revolut', l: ['TCG']};
+  assert.strictEqual(L.saldoSalvadanaio(mesi, sv, '2027-03'), -35);
+  assert.strictEqual(L.saldoEtichetta(mesi, 'TCG').saldo, 25); // the fund spend has no TCG label: only the labelled sale counts
+});
