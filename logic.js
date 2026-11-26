@@ -689,6 +689,133 @@
     return out;
   }
 
+  // ---- 5.1: category changes ----
+  // Plan of a rename / merge / delete of category op.da, WITHOUT writing anything. op = {tipo: 'rinomina' | 'unisci' | 'elimina', da, a?,
+  // vecchi?: 'segui' | 'lascia' (past movements follow, or stay under the old name, which becomes an archived category),
+  // azione?: 'sposta' | 'archivia' (delete only; no azione = plain delete), budget? (merge: budget of the target), oggi: 'YYYY-MM-DD'}.
+  // -> {blocchi (reasons it cannot go ahead), avvisi, usata: [{dove, n, testo}], movimenti: {ym: {id: {c}}} (merge patches, live movements
+  // only: tombstones are never touched), nMov, nMesi, categorie (new full list), campi (other config fields to write, only the ones that
+  // change: ricorrenti, extra, etichette, piani/chiusure with only the touched months), budgetSuggerito, nessunaModifica}.
+  // References updated in the same save: recurring models, extra.carte, label suggestions, plans and closings. A plain delete is refused
+  // while anything still uses the category (choose move or archive). Repeating a half-done operation just finishes it.
+  // shortcut: a closing row whose covering busta equals the category of the row after a merge is left as it is (rare, only a record).
+  function cambioCategoria(mesi, cfg, op) {
+    var n = function (s) { return String(s == null ? '' : s).trim().toLowerCase(); };
+    var lista = cfg.categorie || [], pots = cfg.salvadanai || [], conti = cfg.conti || [], da = op.da, ym0 = String(op.oggi || '9999-12').slice(0, 7);
+    var out = {tipo: op.tipo, da: da, a: op.a || '', blocchi: [], avvisi: [], usata: [], movimenti: {}, nMov: 0, nMesi: 0, categorie: lista, campi: {}, budgetSuggerito: null, nessunaModifica: false};
+    var blocca = function (t) { out.blocchi.push(t); return out; };
+    var conosciute = categorie(mesi, cfg, '');
+    var voce = function (nome) { return lista.filter(function (c) { return c.nome === nome; })[0] || (conosciute.some(function (c) { return c.nome === nome; }) ? {nome: nome, gruppo: '', budget: 0, taglio: null} : null); };
+    var mia = voce(da);
+    if (pots.some(function (v) { return v.nome === da; })) return blocca(da + ' è un salvadanaio, non una categoria');
+    if (!mia) return blocca('Categoria non trovata: ' + da);
+    if (op.tipo === 'elimina' && op.azione === 'sposta') {
+      var dest = voce(op.a);
+      var p = cambioCategoria(mesi, cfg, {tipo: 'unisci', da: da, a: op.a, vecchi: 'segui', budget: dest ? dest.budget || 0 : undefined, oggi: op.oggi});
+      p.tipo = 'elimina'; p.budgetSuggerito = null; return p;
+    }
+    // where the category is used
+    var nm = rinomina(mesi, da, '');
+    var mm = Object.keys(nm).reduce(function (t, k) { return t + Object.keys(nm[k]).length; }, 0);
+    var ric = (cfg.ricorrenti || []).filter(function (r) { return r && r.categoria === da; }).length;
+    var pian = Object.keys(cfg.piani || {}).filter(function (k) { return ((cfg.piani[k] || {}).righe || []).some(function (r) { return r.nome === da; }); }).sort();
+    var chiu = Object.keys(cfg.chiusure || {}).filter(function (k) { return ((cfg.chiusure[k] || {}).righe || []).some(function (r) { return r.c === da || r.a === da; }); }).sort();
+    var carte = ((cfg.extra && cfg.extra.carte) || 'Vendita carte') === da;
+    var eti = (cfg.etichette || []).filter(function (e) { return e && e.categoria === da; }).length;
+    if (mm) out.usata.push({dove: 'movimenti', n: mm, testo: mm + (mm === 1 ? ' movimento' : ' movimenti')});
+    if (ric) out.usata.push({dove: 'ricorrenti', n: ric, testo: ric + (ric === 1 ? ' modello ricorrente' : ' modelli ricorrenti')});
+    if (pian.length) out.usata.push({dove: 'piani', n: pian.length, mesi: pian, testo: (pian.length === 1 ? 'il piano di ' : pian.length + ' piani del mese: ') + pian.join(', ')});
+    if (chiu.length) out.usata.push({dove: 'chiusure', n: chiu.length, mesi: chiu, testo: (chiu.length === 1 ? 'la chiusura di ' : chiu.length + ' chiusure del mese: ') + chiu.join(', ')});
+    if (carte) out.usata.push({dove: 'extra', n: 1, testo: 'la categoria delle vendite di carte (entrate extra)'});
+    if (eti) out.usata.push({dove: 'etichette', n: eti, testo: eti + (eti === 1 ? ' etichetta suggerita' : ' etichette suggerite')});
+    var obi = (cfg.obiettivi || []).filter(function (o) { return o && o.nome === da; }).length;
+    if (obi) out.avvisi.push('Un obiettivo si chiama come la categoria: resta, ma non sarà più collegato a lei.');
+    // rewrite the references da -> a (all of them, or with giu = from the current month on, leaving closed history alone)
+    var riscrivi = function (a, storia) {
+      var c = out.campi;
+      if (ric) c.ricorrenti = (cfg.ricorrenti || []).map(function (r) { return r && r.categoria === da ? Object.assign({}, r, {categoria: a}) : r; });
+      if (carte) c.extra = Object.assign({}, cfg.extra, {carte: a});
+      if (eti) c.etichette = (cfg.etichette || []).map(function (e) { return e && e.categoria === da ? Object.assign({}, e, {categoria: a}) : e; });
+      var mesiPiani = pian.filter(function (k) { return storia || k >= ym0; });
+      if (mesiPiani.length) {
+        c.piani = {};
+        mesiPiani.forEach(function (k) {
+          var tot = {}, ordine = [];
+          cfg.piani[k].righe.forEach(function (r) { var nome = r.nome === da ? a : r.nome; if (!(nome in tot)) { tot[nome] = 0; ordine.push(nome); } tot[nome] = Math.round((tot[nome] + (r.importo || 0)) * 100) / 100; });
+          c.piani[k] = Object.assign({}, cfg.piani[k], {righe: ordine.map(function (nome) { return {nome: nome, importo: tot[nome]}; })});
+        });
+      }
+      if (storia && chiu.length) {
+        c.chiusure = {};
+        chiu.forEach(function (k) { c.chiusure[k] = Object.assign({}, cfg.chiusure[k], {righe: cfg.chiusure[k].righe.map(function (r) { var x = Object.assign({}, r); if (r.c === da) x.c = a; if (r.a === da) x.a = a; return x; })}); }); // never write undefined: Firestore refuses it
+      }
+    };
+    var archivia = function (v) { return Object.assign({}, v, {archiviata: true, budget: 0, taglio: null}); };
+    var conMov = function (a) { out.movimenti = rinomina(mesi, da, a); out.nMesi = Object.keys(out.movimenti).length; out.nMov = mm; };
+
+    if (op.tipo === 'rinomina') {
+      var nuovo = String(op.a == null ? '' : op.a).trim(), lascia = op.vecchi === 'lascia';
+      out.a = nuovo;
+      if (!nuovo) return blocca('Scrivi il nuovo nome');
+      if (nuovo === da) return blocca('Il nuovo nome è uguale al vecchio');
+      var altri = conosciute.map(function (c) { return c.nome; }).filter(function (x) { return lascia || x !== da; }).concat(pots.map(function (v) { return v.nome; }), conti.map(function (c) { return c.nome; }));
+      var clash = altri.filter(function (x) { return n(x) === n(nuovo); })[0];
+      // a name known only from movements (no config entry) is what a half-done rename leaves behind: it is not a clash, the retry finishes it
+      if (clash && clash === nuovo && !lascia && !lista.some(function (c) { return c.nome === clash; }) && !pots.concat(conti).some(function (x) { return x.nome === clash; })) { out.avvisi.push('«' + clash + '» è già usata da alcuni movimenti, senza voce di configurazione: i movimenti si uniranno.'); clash = null; }
+      if (clash) return blocca('Esiste già «' + clash + '» (categoria, salvadanaio o conto): per fonderle usa «Unisci in…»');
+      if (lascia) {
+        var tro1 = lista.some(function (c) { return c.nome === da; });
+        out.categorie = (tro1 ? lista.map(function (c) { return c.nome === da ? archivia(c) : c; }) : lista.concat([archivia(mia)])).concat([Object.assign({}, mia, {nome: nuovo})]);
+        riscrivi(nuovo, false);
+      } else {
+        out.categorie = lista.some(function (c) { return c.nome === da; }) ? lista.map(function (c) { return c.nome === da ? Object.assign({}, c, {nome: nuovo}) : c; }) : lista.slice();
+        conMov(nuovo); riscrivi(nuovo, true);
+      }
+      return out;
+    }
+
+    if (op.tipo === 'unisci') {
+      var dest2 = voce(op.a), lascia2 = op.vecchi === 'lascia';
+      if (!op.a || op.a === da) return blocca('Scegli un\'altra categoria in cui unire');
+      if (!dest2) return blocca('Categoria di arrivo non trovata: ' + op.a);
+      if (dest2.archiviata) return blocca(op.a + ' è archiviata: scegli una categoria attiva');
+      if (!!dest2.entrata !== !!mia.entrata) return blocca('Una categoria di entrata si unisce solo a una di entrata, una di spesa solo a una di spesa');
+      if (mia.finanzia && !dest2.finanzia) return blocca(da + ' è quella che finanzia il mese: la categoria di arrivo deve finanziarlo');
+      var bud = op.budget == null ? dest2.budget || 0 : op.budget;
+      if (!(typeof bud === 'number' && bud >= 0)) return blocca('Il budget deve essere un numero da zero in su');
+      if (!mia.entrata) out.budgetSuggerito = Math.round(((mia.budget || 0) + (dest2.budget || 0)) * 100) / 100;
+      var tro2 = lista.some(function (c) { return c.nome === op.a; });
+      var base = lista.some(function (c) { return c.nome === da; }) ? lista : lista.concat([mia]);
+      out.categorie = base.map(function (c) {
+        if (c.nome === op.a) return Object.assign({}, c, {budget: bud});
+        if (c.nome === da) return lascia2 ? archivia(c) : null;
+        return c;
+      }).filter(Boolean);
+      if (!tro2) out.categorie.push(Object.assign({}, dest2, {budget: bud}));
+      if (!lascia2) conMov(op.a);
+      riscrivi(op.a, !lascia2);
+      if (lascia2 && mm) out.avvisi.push(da + ' resta come categoria archiviata con i suoi ' + mm + ' movimenti.');
+      return out;
+    }
+
+    if (op.tipo === 'elimina') {
+      if (mia.finanzia) return blocca(da + ' è quella che finanzia il mese: non si elimina né si archivia');
+      if (op.azione === 'archivia') {
+        if (mia.archiviata) { out.nessunaModifica = true; out.avvisi.push(da + ' è già archiviata'); return out; }
+        out.categorie = lista.some(function (c) { return c.nome === da; }) ? lista.map(function (c) { return c.nome === da ? archivia(c) : c; }) : lista.concat([archivia(mia)]);
+        if (mia.budget > 0) out.avvisi.push('Il budget di ' + mia.budget + ' € non conta più.');
+        if (ric) out.avvisi.push(ric + (ric === 1 ? ' modello ricorrente usa' : ' modelli ricorrenti usano') + ' questa categoria: restano, ma non si potranno confermare finché non ne scegli un\'altra.');
+        return out;
+      }
+      var duri = out.usata.filter(function (u) { return u.dove !== 'etichette'; });
+      if (duri.length) return blocca(da + ' è usata da: ' + duri.map(function (u) { return u.testo; }).join(', ') + '. Non si elimina: sposta i movimenti in un\'altra categoria oppure archiviala.');
+      out.categorie = lista.filter(function (c) { return c.nome !== da; });
+      if (eti) out.campi.etichette = (cfg.etichette || []).map(function (e) { if (!e || e.categoria !== da) return e; var x = Object.assign({}, e); delete x.categoria; return x; });
+      return out;
+    }
+    return blocca('Operazione non valida');
+  }
+
   // ---- 3.4: net worth, summary per group, savings rate ----
 
   // Net worth (spec rule 11) as of finoA (optional 'YYYY-MM-DD'): the balance of every account (closed ones keep what they hold),
@@ -1014,7 +1141,7 @@
     return {m: m};
   }
 
-  var api = {ricorrentiDovute: ricorrentiDovute, movimentoRicorrente: movimentoRicorrente, validaRicorrente: validaRicorrente, trimestreDi: trimestreDi, trimestreMesi: trimestreMesi, trimestreFine: trimestreFine, trimestreDefault: trimestreDefault, promemoriaRevisione: promemoriaRevisione, obiettivoCollegato: obiettivoCollegato, revisioneTrimestre: revisioneTrimestre, validaRevisione: validaRevisione, revisioniCon: revisioniCon, scadenze: scadenze, proiezioneAnno: proiezioneAnno, saldoEtichetta: saldoEtichetta, azzeraPiano: azzeraPiano, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, mancaRispettoPiano: mancaRispettoPiano, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {cambioCategoria: cambioCategoria, ricorrentiDovute: ricorrentiDovute, movimentoRicorrente: movimentoRicorrente, validaRicorrente: validaRicorrente, trimestreDi: trimestreDi, trimestreMesi: trimestreMesi, trimestreFine: trimestreFine, trimestreDefault: trimestreDefault, promemoriaRevisione: promemoriaRevisione, obiettivoCollegato: obiettivoCollegato, revisioneTrimestre: revisioneTrimestre, validaRevisione: validaRevisione, revisioniCon: revisioniCon, scadenze: scadenze, proiezioneAnno: proiezioneAnno, saldoEtichetta: saldoEtichetta, azzeraPiano: azzeraPiano, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, mancaRispettoPiano: mancaRispettoPiano, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

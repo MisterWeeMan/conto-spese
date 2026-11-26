@@ -61,6 +61,7 @@ Termini dello strumento, in italiano. Gli stessi nomi vanno usati nel codice e n
 ## Aggiunte decise nella chat di unione
 
 - **Spendibile** = somma dei residui dei budget del mese (budget meno speso, Joint alla mia quota). Non dipende dai saldi dei conti.
+- **Cambio di categoria**: rinomina, unione o eliminazione di una categoria dalla pagina Categorie (menu Azioni). Chiede sempre cosa fare dei movimenti passati: spostarli anche, oppure lasciarli con il vecchio nome, che diventa una categoria archiviata (senza budget). Un'eliminazione di una categoria usata sposta i movimenti in un'altra o archivia: i movimenti non si cancellano mai. Modelli ricorrenti, piani e chiusure seguono nello stesso salvataggio.
 - **Categoria archiviata**: resta nei mesi passati, non ha budget, è nascosta quando registro una spesa nuova.
 - **Conto chiuso**: resta nel registro e nei saldi storici, non si può usare per movimenti nuovi.
 - **TCG**: categoria senza budget. Le vecchie categorie dei tornei, dei Judge e delle trasferte diventano etichette di TCG.

@@ -1530,3 +1530,146 @@ test('validaConfig checks ricorrenti and ricorrentiSaltate (import path)', () =>
   assert.ok(L.validaConfig({...rcCfg, ricorrenti: 'x'}).length);
   assert.ok(L.validaConfig({...rcCfg, ricorrentiSaltate: 'x'}).length);
 });
+
+// ---- 5.1: category changes (rename, merge, delete) ----
+const cc = {
+  mesi: {
+    '2026-12': {a: {d: '2026-12-03', u: 10, c: 'Bar', k: 'Banca A', l: ['x']}, b: {d: '2026-12-04', u: 5, c: 'Bar', k: 'Banca A', x: 1}, c: {d: '2026-12-05', u: 7, c: 'Cena', k: 'Banca A'}},
+    '2027-01': {d: {d: '2027-01-02', u: 4, c: 'Bar', k: 'Banca A'}, e: {d: '2027-01-03', e: 100, c: 'Rimborsi', k: 'Banca A'}},
+  },
+  cfg: {
+    categorie: [
+      {nome: 'Bar', gruppo: 'Non necessarie', budget: 40, taglio: 2, joint: true},
+      {nome: 'Cena', gruppo: 'Non necessarie', budget: 60, taglio: 1},
+      {nome: 'Vuota', gruppo: 'Necessarie', budget: 0},
+      {nome: 'Vecchia', gruppo: '', budget: 0, archiviata: true},
+      {nome: 'Rimborsi', entrata: true}, {nome: 'Paga', entrata: true, finanzia: true},
+    ],
+    conti: [{nome: 'Banca A'}], salvadanai: [{nome: 'Ferie', voci: []}],
+    ricorrenti: [{id: 'r1', nome: 'Caffè', tipo: 'spesa', importo: 3, categoria: 'Bar', conto: 'Banca A', giorno: 1, cadenza: 'mensile', da: '2027-01-01'}],
+    piani: {'2026-12': {stipendio: 1000, righe: [{nome: 'Bar', importo: 40}, {nome: 'Cena', importo: 60}]}, '2027-01': {stipendio: 1000, righe: [{nome: 'Bar', importo: 45}]}},
+    etichette: [{nome: 'x', categoria: 'Bar'}],
+  },
+};
+const cambio = (op, over) => L.cambioCategoria(cc.mesi, {...cc.cfg, ...over}, {oggi: '2027-01-15', ...op});
+const cat = (p, n) => p.categorie.find(c => c.nome === n);
+
+test('cambioCategoria rename following the old movements', () => {
+  const p = cambio({tipo: 'rinomina', da: 'Bar', a: 'Caffè', vecchi: 'segui'});
+  assert.deepStrictEqual(p.blocchi, []);
+  assert.deepStrictEqual(p.movimenti, {'2026-12': {a: {c: 'Caffè'}}, '2027-01': {d: {c: 'Caffè'}}}); // the tombstone b is untouched
+  assert.strictEqual(p.nMov, 2);
+  assert.deepStrictEqual(cat(p, 'Caffè'), {nome: 'Caffè', gruppo: 'Non necessarie', budget: 40, taglio: 2, joint: true});
+  assert.strictEqual(cat(p, 'Bar'), undefined);
+  assert.strictEqual(p.campi.ricorrenti[0].categoria, 'Caffè');
+  assert.deepStrictEqual(p.campi.etichette, [{nome: 'x', categoria: 'Caffè'}]);
+  assert.deepStrictEqual(Object.keys(p.campi.piani).sort(), ['2026-12', '2027-01']);
+  assert.strictEqual(p.campi.piani['2026-12'].righe[0].nome, 'Caffè');
+});
+
+test('cambioCategoria rename leaving the old movements archives the old name', () => {
+  const p = cambio({tipo: 'rinomina', da: 'Bar', a: 'Caffè', vecchi: 'lascia'});
+  assert.deepStrictEqual(p.movimenti, {});
+  assert.strictEqual(p.nMov, 0);
+  assert.deepStrictEqual(cat(p, 'Bar'), {nome: 'Bar', gruppo: 'Non necessarie', budget: 0, taglio: null, joint: true, archiviata: true});
+  assert.deepStrictEqual(cat(p, 'Caffè'), {nome: 'Caffè', gruppo: 'Non necessarie', budget: 40, taglio: 2, joint: true});
+  assert.strictEqual(p.campi.ricorrenti[0].categoria, 'Caffè'); // new recurring spending uses the new name
+  assert.deepStrictEqual(Object.keys(p.campi.piani), ['2027-01']); // only the months from now on; closed history keeps the old name
+});
+
+test('cambioCategoria rename refuses clashes and empty names', () => {
+  for (const a of ['cena', 'Ferie', 'banca a', 'Vecchia', '  ', 'Bar'])
+    assert.ok(cambio({tipo: 'rinomina', da: 'Bar', a, vecchi: 'segui'}).blocchi.length, a);
+  assert.deepStrictEqual(cambio({tipo: 'rinomina', da: 'Bar', a: 'bar', vecchi: 'segui'}).blocchi, []); // only the case changes
+  assert.ok(cambio({tipo: 'rinomina', da: 'Bar', a: 'bar', vecchi: 'lascia'}).blocchi.length); // old name would clash
+  assert.ok(cambio({tipo: 'rinomina', da: 'Nessuna', a: 'Z', vecchi: 'segui'}).blocchi.length);
+  assert.ok(cambio({tipo: 'rinomina', da: 'Ferie', a: 'Z', vecchi: 'segui'}).blocchi.length); // a pot is not a category
+});
+
+test('cambioCategoria merge moves the movements, keeps target settings and suggests the summed budget', () => {
+  const p = cambio({tipo: 'unisci', da: 'Bar', a: 'Cena', vecchi: 'segui'});
+  assert.deepStrictEqual(p.blocchi, []);
+  assert.strictEqual(p.nMov, 2);
+  assert.strictEqual(cat(p, 'Bar'), undefined);
+  assert.deepStrictEqual(cat(p, 'Cena'), {nome: 'Cena', gruppo: 'Non necessarie', budget: 60, taglio: 1}); // taglio and joint of the target stay
+  assert.strictEqual(p.budgetSuggerito, 100);
+  assert.strictEqual(cambio({tipo: 'unisci', da: 'Bar', a: 'Cena', vecchi: 'segui', budget: 80}).categorie.find(c => c.nome === 'Cena').budget, 80);
+  assert.ok(cambio({tipo: 'unisci', da: 'Bar', a: 'Cena', vecchi: 'segui', budget: -1}).blocchi.length);
+  assert.strictEqual(p.campi.ricorrenti[0].categoria, 'Cena');
+  assert.deepStrictEqual(p.campi.piani['2026-12'].righe, [{nome: 'Cena', importo: 100}]); // both rows of one plan become one with the sum
+});
+
+test('cambioCategoria merge leaving the old movements archives the source', () => {
+  const p = cambio({tipo: 'unisci', da: 'Bar', a: 'Cena', vecchi: 'lascia'});
+  assert.strictEqual(p.nMov, 0);
+  assert.deepStrictEqual(cat(p, 'Bar'), {nome: 'Bar', gruppo: 'Non necessarie', budget: 0, taglio: null, joint: true, archiviata: true});
+});
+
+test('cambioCategoria merge needs an existing, active category of the same kind', () => {
+  assert.ok(cambio({tipo: 'unisci', da: 'Bar', a: 'Rimborsi', vecchi: 'segui'}).blocchi.length); // expense into income
+  assert.ok(cambio({tipo: 'unisci', da: 'Bar', a: 'Vecchia', vecchi: 'segui'}).blocchi.length); // archived target
+  assert.ok(cambio({tipo: 'unisci', da: 'Bar', a: 'Bar', vecchi: 'segui'}).blocchi.length);
+  assert.ok(cambio({tipo: 'unisci', da: 'Bar', a: 'Boh', vecchi: 'segui'}).blocchi.length);
+  assert.ok(cambio({tipo: 'unisci', da: 'Paga', a: 'Rimborsi', vecchi: 'segui'}).blocchi.length); // the one that funds the month cannot lose that
+});
+
+test('cambioCategoria delete: empty category goes straight, used one needs a choice', () => {
+  const v = cambio({tipo: 'elimina', da: 'Vuota'});
+  assert.deepStrictEqual(v.blocchi, []);
+  assert.strictEqual(cat(v, 'Vuota'), undefined);
+  assert.strictEqual(v.nMov, 0);
+  const u = cambio({tipo: 'elimina', da: 'Bar'});
+  assert.ok(u.blocchi.length); // movements, a recurring model and plans use it
+  assert.ok(u.usata.some(x => x.dove === 'movimenti' && x.n === 2));
+  assert.ok(u.usata.some(x => x.dove === 'ricorrenti' && x.n === 1));
+  assert.ok(u.usata.some(x => x.dove === 'piani'));
+  assert.ok(cambio({tipo: 'elimina', da: 'Paga'}).blocchi.length); // funds the month
+});
+
+test('cambioCategoria delete by moving or archiving never deletes movements', () => {
+  const m = cambio({tipo: 'elimina', azione: 'sposta', da: 'Bar', a: 'Cena'});
+  assert.deepStrictEqual(m.blocchi, []);
+  assert.strictEqual(m.nMov, 2);
+  assert.strictEqual(m.categorie.find(c => c.nome === 'Cena').budget, 60); // no budget change when deleting
+  assert.ok(cambio({tipo: 'elimina', azione: 'sposta', da: 'Bar'}).blocchi.length); // no destination
+  const a = cambio({tipo: 'elimina', azione: 'archivia', da: 'Bar'});
+  assert.deepStrictEqual(a.blocchi, []);
+  assert.deepStrictEqual(a.movimenti, {});
+  assert.deepStrictEqual(cat(a, 'Bar'), {nome: 'Bar', gruppo: 'Non necessarie', budget: 0, taglio: null, joint: true, archiviata: true});
+  assert.ok(a.avvisi.some(x => /ricorrent/i.test(x))); // the recurring model keeps an archived category
+  assert.ok(cambio({tipo: 'elimina', azione: 'archivia', da: 'Paga'}).blocchi.length);
+  assert.ok(cambio({tipo: 'elimina', azione: 'archivia', da: 'Vecchia'}).nessunaModifica); // already archived
+});
+
+test('cambioCategoria card-sales setting follows the category', () => {
+  const cfg = {...cc.cfg, categorie: [...cc.cfg.categorie, {nome: 'Vendita carte', entrata: true}]};
+  const p = L.cambioCategoria(cc.mesi, cfg, {oggi: '2027-01-15', tipo: 'rinomina', da: 'Vendita carte', a: 'Carte', vecchi: 'segui'});
+  assert.strictEqual(p.campi.extra.carte, 'Carte');
+  assert.ok(L.cambioCategoria(cc.mesi, cfg, {oggi: '2027-01-15', tipo: 'elimina', da: 'Vendita carte'}).blocchi.length);
+});
+
+test('cambioCategoria is safe to repeat after a half-done write', () => {
+  const p = cambio({tipo: 'rinomina', da: 'Bar', a: 'Caffè', vecchi: 'segui'});
+  // only the movements were written: the config still has the old name, so the same operation finishes the job
+  const mesi = JSON.parse(JSON.stringify(cc.mesi));
+  for (const [ym, patch] of Object.entries(p.movimenti)) for (const [id, f] of Object.entries(patch)) Object.assign(mesi[ym][id], f);
+  const again = L.cambioCategoria(mesi, cc.cfg, {oggi: '2027-01-15', tipo: 'rinomina', da: 'Bar', a: 'Caffè', vecchi: 'segui'});
+  assert.deepStrictEqual(again.movimenti, {});
+  assert.deepStrictEqual(again.categorie, p.categorie);
+  // once everything is written the old name is gone: repeating it is refused, nothing is touched
+  const cfg2 = {...cc.cfg, categorie: p.categorie, ...p.campi};
+  const done = L.cambioCategoria(mesi, cfg2, {oggi: '2027-01-15', tipo: 'rinomina', da: 'Bar', a: 'Caffè', vecchi: 'segui'});
+  assert.ok(done.blocchi.length);
+  assert.deepStrictEqual(done.movimenti, {});
+});
+
+test('cambioCategoria rewrites closings (both fields, no undefined) and merges income categories', () => {
+  const chiusure = {'2026-12': {d: '2027-01-02', righe: [{c: 'Bar', tipo: 'avanzo', importo: 5, a: 'Ferie', coperto: 0}, {c: 'Cena', tipo: 'sforo', importo: 3, a: 'Bar', coperto: 3}, {c: 'Bar', tipo: 'sforo', importo: 1}]}};
+  const p = cambio({tipo: 'unisci', da: 'Bar', a: 'Cena', vecchi: 'segui'}, {chiusure});
+  assert.deepStrictEqual(p.campi.chiusure['2026-12'].righe, [{c: 'Cena', tipo: 'avanzo', importo: 5, a: 'Ferie', coperto: 0}, {c: 'Cena', tipo: 'sforo', importo: 3, a: 'Cena', coperto: 3}, {c: 'Cena', tipo: 'sforo', importo: 1}]);
+  assert.ok(p.usata.some(x => x.dove === 'chiusure'));
+  const e = cambio({tipo: 'unisci', da: 'Rimborsi', a: 'Paga', vecchi: 'segui'});
+  assert.deepStrictEqual(e.blocchi, []);
+  assert.strictEqual(e.budgetSuggerito, null);
+  assert.strictEqual(e.nMov, 1);
+});

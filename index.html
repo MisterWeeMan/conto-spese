@@ -145,6 +145,17 @@ details summary{cursor:pointer;font-weight:500}
 @keyframes entra{from{transform:translateX(-100%)}}
 @media (prefers-reduced-motion:reduce){#menu[open]{animation:none}}
 #menu::backdrop{background:rgba(0,0,0,.4)}
+#catOp{width:min(480px,calc(100% - 32px));max-height:calc(100% - 32px);padding:0;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink)}
+#catOp::backdrop{background:rgba(0,0,0,.4)}
+#catOp form{display:flex;flex-direction:column;gap:12px;padding:16px}
+#catOp h2{margin:0;font-size:18px}
+#catOp fieldset{border:1px solid var(--line);border-radius:8px;margin:0;padding:8px 12px;display:flex;flex-direction:column;gap:8px}
+#catOp input[type=radio]{width:auto;flex:none;margin:3px 0 0}#catOp label.chk{align-items:flex-start}
+#catOp legend{font-size:13px;color:var(--muted);padding:0 4px}
+#catOp [hidden]{display:none}
+#coPiano p{margin:0 0 6px;font-size:14px}#coPiano .bl{color:var(--over);font-weight:600}#coPiano .av{color:var(--warn)}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.azSel{width:auto;max-width:9em;padding:4px 6px;font-size:13px}
 #menu nav{display:flex;flex-direction:column;gap:4px;padding:16px;padding-top:max(16px,env(safe-area-inset-top,0px));padding-left:max(16px,env(safe-area-inset-left,0px))}
 #menu a{padding:12px;border-radius:8px;color:inherit;text-decoration:none;font-weight:500}
 #menu a:hover{background:var(--bg)}
@@ -194,7 +205,7 @@ details summary{cursor:pointer;font-weight:500}
       <h2 id="catTitolo">Nuova categoria</h2>
       <form id="catForm" autocomplete="off">
         <p class="stato tutta">* obbligatorio</p>
-        <label class="tutta"><span>Nome<b class="ob" aria-hidden="true">*</b></span><input id="catNome" required maxlength="60"></label>
+        <label class="tutta"><span>Nome<b class="ob" aria-hidden="true">*</b></span><input id="catNome" required maxlength="60"><small class="stato" id="catNomeNota" hidden>Per cambiare il nome usa «Rinomina» nel menu Azioni della tabella.</small></label>
         <label class="chk tutta"><input type="checkbox" id="catEntr">Categoria di entrata (stipendio, rimborsi, vendite…)</label>
         <label class="chk tutta" id="catFinL" hidden><input type="checkbox" id="catFin">Finanzia il mese (lo stipendio)</label>
         <label data-spesa>Gruppo<select id="catGruppo"><option value="">Nessuno</option><option>Necessarie</option><option>Non necessarie</option><option>Risparmi</option></select></label>
@@ -202,11 +213,11 @@ details summary{cursor:pointer;font-weight:500}
         <label data-spesa>Priorità di taglio<input id="catTaglio" inputmode="numeric" placeholder="1 = prima da tagliare"></label>
         <label class="chk tutta" data-spesa><input type="checkbox" id="catJoint">Joint (il budget è sul conto Joint, già la mia quota)</label>
         <label class="chk"><input type="checkbox" id="catArch">Archiviata</label>
-        <label class="tutta" id="catDestBox" hidden>Se la elimini, sposta i movimenti in<select id="catDest"></select></label>
-        <p class="stato tutta" id="catNota" hidden></p>
+        <div class="azioni tutta" id="catAz" hidden>
+          <button class="btn" type="button" data-azb="rinomina">Rinomina…</button><button class="btn" type="button" data-azb="unisci">Unisci in…</button><button class="btn peric" type="button" data-azb="elimina">Elimina…</button>
+        </div>
         <div class="azioni tutta">
           <button class="btn pri" id="catSalva" type="submit">Aggiungi</button>
-          <button class="btn peric" id="catElimina" type="button" hidden>Elimina</button>
           <button class="btn" id="catAnnulla" type="button" hidden>Annulla</button>
         </div>
       </form>
@@ -219,6 +230,25 @@ details summary{cursor:pointer;font-weight:500}
       <div class="tabw" id="catLista"><p class="vuoto">Qui compaiono le categorie. Tocca una riga per modificarla.</p></div>
     </section>
   </div>
+  <dialog id="catOp" aria-labelledby="catOpTit">
+    <form id="catOpForm" autocomplete="off" novalidate>
+      <h2 id="catOpTit"></h2>
+      <p class="stato" data-op="rinomina unisci elimina">* obbligatorio</p>
+      <label data-op="rinomina"><span>Nuovo nome<b class="ob" aria-hidden="true">*</b></span><input id="coNome" maxlength="60"></label>
+      <fieldset data-op="elimina" id="coAz"><legend>Cosa fai della categoria?</legend>
+        <label class="chk"><input type="radio" name="coAz" value="archivia" checked>Archivia la categoria: resta nei mesi passati, senza budget, nascosta per i movimenti nuovi</label>
+        <label class="chk"><input type="radio" name="coAz" value="sposta">Sposta i movimenti in un'altra categoria ed elimina questa</label>
+      </fieldset>
+      <label data-op="unisci" id="coAL"><span>Unisci in<b class="ob" aria-hidden="true">*</b></span><select id="coA"></select></label>
+      <label data-op="unisci" id="coBudL"><span>Budget mensile della categoria di arrivo (€)</span><input id="coBud" inputmode="decimal" data-eur="zero"><small class="stato" id="coBudNota"></small></label>
+      <fieldset data-op="rinomina unisci" id="coVec"><legend>Cosa fai dei movimenti passati?</legend>
+        <label class="chk"><input type="radio" name="coVec" value="segui" checked>Spostali anche (tutti i mesi)</label>
+        <label class="chk"><input type="radio" name="coVec" value="lascia">Lascia i vecchi: restano con il vecchio nome, che diventa una categoria archiviata senza budget</label>
+      </fieldset>
+      <div id="coPiano" aria-live="polite"></div>
+      <div class="azioni"><button class="btn pri" id="coOk" type="submit">Conferma</button><button class="btn" id="coNo" type="button">Annulla</button></div>
+    </form>
+  </dialog>
 
   <div class="due" id="pagSalvadanai" hidden>
     <section class="box">
@@ -565,7 +595,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {chiusuraProposta, chiusuraCalcola, chiusuraStato, chiusuraMancante, saldoSalvadanaio, mancaRispettoPiano, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, azzeraPiano, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota, saldi, differenzaControllo, ultimoControllo, storicoControlli, controlloScaduto, controlliInRitardo, investimenti, patrimonio, patrimonioSerie, riepilogoGruppi, tassoRisparmio} = window.CSLogic;
+const {chiusuraProposta, chiusuraCalcola, chiusuraStato, chiusuraMancante, saldoSalvadanaio, mancaRispettoPiano, quotaSalvadanaio, ammanco, net, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, azzeraPiano, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota, saldi, differenzaControllo, ultimoControllo, storicoControlli, controlloScaduto, controlliInRitardo, investimenti, patrimonio, patrimonioSerie, riepilogoGruppi, tassoRisparmio} = window.CSLogic;
 const {validaImporto, validaQuotaJoint, saldoEtichetta, proiezioneAnno, ricorrentiDovute, movimentoRicorrente, validaRicorrente} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 
@@ -665,11 +695,12 @@ function render() {
     });
     $('catConta').textContent = `${cq ? `${cv.length} di ${st.catInfo.length}` : st.catInfo.length} categorie · movimenti in tutti gli anni`;
     const COL = [['nome', 'Nome', ''], ['tipo', 'Tipo', ''], ['gruppo', 'Gruppo', ''], ['budget', 'Budget mensile', 'd'], ['taglio', 'Priorità', 'd'], ['joint', 'Joint', ''], ['archiviata', 'Archiviata', ''], ['n', 'Movimenti', 'd']];
-    $('catLista').innerHTML = cv.length ? `<table class="tab"><thead><tr>${COL.map(([k, l, c]) => `<th scope="col" class="${c}" aria-sort="${o.k === k ? (o.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" data-ord="${k}">${l}${o.k === k ? (o.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}</tr></thead><tbody>${cv.map(r => `<tr data-cat="${esc(r.c)}" class="${st.catEdit === r.c ? 'sel' : ''}">
+    const azioni = r => `<select class="azSel" data-az="${esc(r.c)}" aria-label="Azioni per ${esc(r.c)}"><option value="">Azioni…</option><option value="rinomina">Rinomina</option><option value="unisci">Unisci in…</option><option value="elimina">Elimina…</option></select>`;
+    $('catLista').innerHTML = cv.length ? `<table class="tab"><thead><tr>${COL.map(([k, l, c]) => `<th scope="col" class="${c}" aria-sort="${o.k === k ? (o.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" data-ord="${k}">${l}${o.k === k ? (o.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`).join('')}<th scope="col"><span class="vh">Azioni</span></th></tr></thead><tbody>${cv.map(r => `<tr data-cat="${esc(r.c)}" class="${st.catEdit === r.c ? 'sel' : ''}">
       <td><button type="button" class="nm" aria-label="Modifica ${esc(r.c)}">${esc(r.c)}</button></td><td>${tipoCat(r)}</td><td>${esc(r.gruppo || '–')}</td><td class="d">${r.budget > 0 ? eur.format(r.budget) : '–'}</td>
       <td class="d">${r.entrata ? '–' : `<input class="pri" inputmode="numeric" value="${r.taglio > 0 ? r.taglio : ''}" placeholder="–" aria-label="Priorità di taglio di ${esc(r.c)}" data-pri="${esc(r.c)}">`}</td>
       <td>${r.entrata ? '–' : `<input type="checkbox" aria-label="Joint: ${esc(r.c)}" data-joint="${esc(r.c)}"${r.joint ? ' checked' : ''}>`}</td>
-      <td>${r.archiviata ? 'Sì' : 'No'}</td><td class="d">${r.n}</td></tr>`).join('')}</tbody></table>`
+      <td>${r.archiviata ? 'Sì' : 'No'}</td><td class="d">${r.n}</td><td>${azioni(r)}</td></tr>`).join('')}</tbody></table>`
       : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
   $('etList').innerHTML = [...new Set([...etichette(st.mesi).map(r => r.l), ...(st.cfg.etichette || []).map(x => x?.nome).filter(Boolean)])].map(l => `<option value="${esc(l)}">`).join('');
@@ -971,15 +1002,8 @@ function setCatEdit(c) {
   st.catEdit = r ? r.c : null;
   $('catTitolo').textContent = r ? 'Modifica categoria' : 'Nuova categoria';
   $('catSalva').textContent = r ? 'Salva modifiche' : 'Aggiungi';
-  $('catElimina').hidden = $('catAnnulla').hidden = !r;
-  $('catElimina').textContent = 'Elimina'; delete $('catElimina').dataset.ok;
-  // a used category is deleted only by moving its movements to another one: without category they would silently become transfers
-  const altre = (st.catInfo || []).filter(x => x.c !== r?.c && !x.entrata === !r?.entrata).map(x => x.c); // same kind: expenses never move into an income category
-  $('catElimina').disabled = !!r?.n && !altre.length;
-  $('catNota').hidden = $('catDestBox').hidden = !r?.n;
-  if (r?.n) $('catNota').textContent = `Usata in ${nMov(r.n)} in tutti gli anni: se la rinomini i movimenti la seguono.${altre.length ? '' : ' Per eliminarla crea prima un\'altra categoria.'}`;
-  // no default destination: the user must pick it, a merge of two categories cannot be undone
-  $('catDest').innerHTML = '<option value="">Scegli…</option>' + altre.map(c => `<option>${esc(c)}</option>`).join('');
+  $('catAnnulla').hidden = $('catAz').hidden = !r;
+  $('catNome').readOnly = !!r; $('catNomeNota').hidden = !r; // a rename asks what to do with the past movements: it has its own panel
   pulisciErr($('catForm'));
   $('catNome').value = r ? r.c : '';
   $('catGruppo').value = r?.gruppo || ''; $('catBudget').value = r?.budget > 0 ? String(r.budget).replace('.', ',') : '';
@@ -1007,41 +1031,104 @@ $('catForm').addEventListener('submit', ev => {
   const prev = st.catInfo.find(x => x.c === da) || {};
   const mod = window.CSLogic.riordinaTaglio([...st.catInfo.filter(c => c.c !== da), {nome: da || nome, taglio: prev.taglio, archiviata: nuova.archiviata}], da || nome, taglio);
   const cfg = {categorie: [...st.cfg.categorie.filter(c => c.nome !== da && c.nome !== nome).map(c => c.nome in mod ? {...c, taglio: mod[c.nome]} : c), nuova]};
-  // one batch: a rename must not stay half done between the movements and the config
-  const batch = writeBatch(db);
-  let n = 0;
-  if (da && da !== nome) {
-    for (const [ym, mov] of Object.entries(rinomina(st.mesi, da, nome))) { batch.set(refMese(ym), {mov}, {merge: true}); n += Object.keys(mov).length; }
-  }
-  batch.set(refCfg(), cfg, {merge: true});
-  batch.commit().catch(errore); // not awaited, same reason as scrivi
-  toast(!da ? `Categoria aggiunta: ${nome}` : n ? `Categoria salvata, ${nMov(n)} aggiornat${n === 1 ? 'o' : 'i'}` : 'Categoria salvata');
+  if (!scriviCfg(cfg)) return;
+  toast(!da ? `Categoria aggiunta: ${nome}` : 'Categoria salvata');
   setCatEdit(null); render();
 });
-$('catElimina').addEventListener('click', () => {
-  const b = $('catElimina'), c = st.catEdit, a = $('catDest').value, patch = Object.entries(rinomina(st.mesi, c, a));
-  // never leave movements without category
-  if (patch.length && !a) { toast('Scegli prima dove spostare i movimenti'); $('catDest').focus(); return; }
-  if (!b.dataset.ok) { b.dataset.ok = 1; b.textContent = 'Conferma eliminazione'; return; }
-  // one batch, as for the rename: the movements and the config move together
-  const batch = writeBatch(db);
-  let n = 0;
-  for (const [ym, mov] of patch) { batch.set(refMese(ym), {mov}, {merge: true}); n += Object.keys(mov).length; }
-  batch.set(refCfg(), {categorie: st.cfg.categorie.filter(x => x.nome !== c)}, {merge: true});
-  batch.commit().catch(errore); // not awaited, same reason as scrivi
-  toast(n ? `Categoria eliminata, ${nMov(n)} spostat${n === 1 ? 'o' : 'i'} in ${a}` : 'Categoria eliminata'); setCatEdit(null); render();
+// Rename / merge / delete (5.1): the panel shows the plan from CSLogic.cambioCategoria and writes it on confirm.
+function catOpOp() {
+  const t = st.catOp.tipo, o = {tipo: t, da: st.catOp.da, oggi: todayISO()};
+  const rv = n => document.querySelector(`input[name=${n}]:checked`)?.value;
+  if (t === 'rinomina') { o.a = $('coNome').value; o.vecchi = rv('coVec'); }
+  if (t === 'unisci') { o.a = $('coA').value; o.vecchi = rv('coVec'); }
+  if (t === 'elimina') { o.azione = rv('coAz'); if (o.azione === 'sposta') o.a = $('coA').value; }
+  return o;
+}
+function catOpPiano() {
+  const o = catOpOp(), t = o.tipo, r = st.catInfo.find(x => x.c === o.da) || {};
+  const usata = window.CSLogic.cambioCategoria(st.mesi, st.cfg, {tipo: 'elimina', da: o.da, oggi: o.oggi}).usata.some(u => u.dove !== 'etichette');
+  $('coAz').hidden = t !== 'elimina' || !usata;
+  if (t === 'elimina' && !usata) delete o.azione;
+  const mostraA = t === 'unisci' || (t === 'elimina' && o.azione === 'sposta');
+  $('coAL').hidden = !mostraA; $('coBudL').hidden = t !== 'unisci' || !!r.entrata;
+  $('coAL').querySelector('span').firstChild.textContent = t === 'unisci' ? 'Unisci in' : 'Sposta i movimenti in';
+  let ok = true;
+  if (mostraA && !o.a) ok = false; // no default destination: a merge cannot be undone
+  if (t === 'rinomina' && !o.a.trim()) ok = false;
+  const bud = $('coBud');
+  if (t === 'unisci' && !$('coBudL').hidden && o.a) {
+    const sug = window.CSLogic.cambioCategoria(st.mesi, st.cfg, o).budgetSuggerito;
+    if (!bud.dataset.toccato && sug != null) bud.value = String(sug).replace('.', ',');
+    $('coBudNota').textContent = sug != null ? `Somma dei due budget: ${eur.format(sug)}. Puoi cambiarlo.` : '';
+    const v = leggi(bud); if (v === null) ok = false; else o.budget = v;
+  }
+  const p = window.CSLogic.cambioCategoria(st.mesi, st.cfg, o);
+  const html = [];
+  if (!ok && !p.blocchi.length) html.push('<p>Completa i campi per vedere cosa verrà scritto.</p>');
+  if (p.usata.length) html.push(`<p><b>Usata da:</b> ${p.usata.map(u => esc(u.testo)).join(', ')}.</p>`);
+  p.blocchi.forEach(b => html.push(`<p class="bl" role="alert">${esc(b)}</p>`));
+  p.avvisi.forEach(a => html.push(`<p class="av">${esc(a)}</p>`));
+  if (ok && !p.blocchi.length && !p.nessunaModifica) {
+    const cf = Object.keys(p.campi).map(k => ({ricorrenti: 'modelli ricorrenti', extra: 'impostazioni', etichette: 'etichette', piani: 'piani del mese', chiusure: 'chiusure'}[k] || k));
+    html.push(`<p><b>Verrà scritto:</b> ${p.nMov ? `${nMov(p.nMov)} in ${p.nMesi} mes${p.nMesi === 1 ? 'e' : 'i'}, ` : 'nessun movimento, '}la lista delle categorie${cf.length ? ' e ' + cf.join(', ') : ''}. I movimenti non si cancellano mai.</p>`);
+  }
+  $('coPiano').innerHTML = html.join('');
+  $('coOk').disabled = !ok || p.blocchi.length > 0 || p.nessunaModifica;
+  $('coOk').textContent = t === 'rinomina' ? (p.nMov ? `Rinomina e aggiorna ${nMov(p.nMov)}` : 'Rinomina') : t === 'unisci' ? (p.nMov ? `Unisci e sposta ${nMov(p.nMov)}` : 'Unisci') : o.azione === 'archivia' ? 'Archivia' : o.azione === 'sposta' ? `Elimina e sposta ${nMov(p.nMov)}` : 'Elimina';
+  $('coOk').className = t === 'elimina' && o.azione !== 'archivia' ? 'btn peric' : 'btn pri';
+  return {o, p};
+}
+function apriCatOp(tipo, da) {
+  const r = st.catInfo.find(x => x.c === da); if (!r) return;
+  st.catOp = {tipo, da};
+  $('catOpTit').textContent = {rinomina: 'Rinomina', unisci: 'Unisci', elimina: 'Elimina'}[tipo] + ` «${da}»`;
+  for (const el of $('catOpForm').querySelectorAll('[data-op]')) el.hidden = !el.dataset.op.split(' ').includes(tipo);
+  const altre = st.catInfo.filter(x => x.c !== da && !x.archiviata && !x.entrata === !r.entrata).map(x => x.c);
+  $('coA').innerHTML = '<option value="">Scegli…</option>' + altre.map(c => `<option>${esc(c)}</option>`).join('');
+  $('coNome').value = da; $('coBud').value = ''; delete $('coBud').dataset.toccato; pulisciErr($('catOpForm'));
+  for (const n of ['coVec', 'coAz']) document.querySelector(`input[name=${n}]`).checked = true;
+  catOpPiano(); $('catOp').showModal(); (tipo === 'rinomina' ? $('coNome') : tipo === 'unisci' ? $('coA') : $('coOk')).focus();
+}
+$('catOpForm').addEventListener('input', ev => { if (ev.target.id === 'coBud') ev.target.dataset.toccato = 1; catOpPiano(); });
+$('catOpForm').addEventListener('change', catOpPiano);
+$('catAz').addEventListener('click', ev => { const t = ev.target.dataset.azb; if (t && st.catEdit) apriCatOp(t, st.catEdit); });
+$('coNo').addEventListener('click', () => $('catOp').close());
+$('catOp').addEventListener('click', ev => { if (ev.target === $('catOp')) $('catOp').close(); });
+$('catOpForm').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  if (!ready()) { toast('Il database non è ancora pronto'); return; }
+  const {o, p} = catOpPiano();
+  if ($('coOk').disabled) return;
+  const ops = Object.entries(p.movimenti).map(([ym, mov]) => bt => bt.set(refMese(ym), {mov}, {merge: true}));
+  const cfgOp = bt => bt.set(refCfg(), {categorie: p.categorie, ...p.campi}, {merge: true});
+  const fine = {rinomina: `Rinominata in ${p.a}`, unisci: `Unita in ${p.a}`, elimina: o.azione === 'archivia' ? 'Categoria archiviata' : 'Categoria eliminata'}[o.tipo] + (p.nMov ? `, ${nMov(p.nMov)} spostat${p.nMov === 1 ? 'o' : 'i'}` : '');
+  $('catOp').close(); setCatEdit(null);
+  if (ops.length < 450) { // the usual case (one write per month): movements and config in ONE batch, all or nothing
+    const bt = writeBatch(db); ops.forEach(f => f(bt)); cfgOp(bt);
+    bt.commit().catch(errore); // not awaited, same reason as scrivi
+    toast(fine);
+  } else { // shortcut: very many months do not fit one batch (limit 500): movements first, config last; needs the network; a failure leaves a state that repeating the same operation finishes
+    let n = 0;
+    try {
+      for (let i = 0; i < ops.length; i += 400) { const bt = writeBatch(db); ops.slice(i, i + 400).forEach(f => f(bt)); await bt.commit(); n += Math.min(400, ops.length - i); }
+      const bt = writeBatch(db); cfgOp(bt); await bt.commit(); toast(fine);
+    } catch (err) { toast(`Non completato: ${n} mesi spostati, la configurazione NON è cambiata. Ripeti la stessa operazione per finire. (${err?.message || err?.code || 'errore'})`, 9000); }
+  }
+  render();
 });
 $('catAnnulla').addEventListener('click', () => { setCatEdit(null); render(); });
 $('catCerca').addEventListener('input', render);
 $('catLista').addEventListener('click', ev => {
   const h = ev.target.closest('[data-ord]');
   if (h) { st.catOrd = st.catOrd.k === h.dataset.ord ? {k: h.dataset.ord, dir: -st.catOrd.dir} : {k: h.dataset.ord, dir: 1}; render(); return; }
-  const b = ev.target.closest('tr[data-cat]'); if (!b || ev.target.closest('input')) return;
+  const b = ev.target.closest('tr[data-cat]'); if (!b || ev.target.closest('input,select')) return;
   setCatEdit(b.dataset.cat); render(); $('pagCategorie').scrollIntoView({behavior: 'smooth', block: 'start'});
 });
 
 // Priority typed in a table cell: unique number, the ones below shift (riordinaTaglio); one write of the whole list.
 $('catLista').addEventListener('change', ev => {
+  const az = ev.target.dataset.az;
+  if (az !== undefined) { const v = ev.target.value; ev.target.value = ''; if (v) apriCatOp(v, az); return; }
   const jn = ev.target.dataset.joint;
   if (jn !== undefined) { // Joint flag in a cell: same write as the priority, only this category changes
     const joint = ev.target.checked, r = st.catInfo.find(x => x.c === jn);
