@@ -41,6 +41,9 @@ Termini dello strumento, in italiano. Gli stessi nomi vanno usati nel codice e n
 - **Etichetta**: dettaglio dentro una categoria o ambito trasversale (TCG). Mostra quanto pesa; nessun budget proprio.
 - **Saldo dell'etichetta**: entrate meno uscite dei movimenti con quell'etichetta in un periodo (per TCG: quanto guadagno o perdo con le carte). Informazione, non budget: non entra nello spendibile né nel piano. Non è il saldo del **Fondo TCG**, che è un salvadanaio.
 
+- **Proiezione**: previsione da oggi al 31 dicembre di spendibile, saldi dei salvadanai e patrimonio, dal ritmo dei mesi completi e dal piano del mese. Se i dati non bastano dice «non abbastanza dati».
+- **Scadenza non coperta**: una voce di un salvadanaio il cui saldo previsto alla data non basta a pagarla; `manca` dice di quanto, e la quota mensile andrebbe alzata di `manca ÷ mesi rimasti`.
+
 ## Joint
 
 - **Joint**: conto comune con la compagna.

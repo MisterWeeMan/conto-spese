@@ -1250,3 +1250,89 @@ test('Fondo TCG: a card sale feeds it, below zero it is to be won back, and the 
   assert.strictEqual(L.saldoSalvadanaio(mesi, sv, '2027-03'), -35);
   assert.strictEqual(L.saldoEtichetta(mesi, 'TCG').saldo, 25); // the fund spend has no TCG label: only the labelled sale counts
 });
+
+// ---- 4.2: due-date coverage (B11) and end-of-year projection ----
+const potCompleanno = (extra) => Object.assign({nome: 'Compleanno', gruppo: 'Non necessarie', conto: 'Revolut', saldoIniziale: {data: '2026-01-01', importo: 0},
+  voci: [{nome: 'Regali', annuale: 200, data: '2026-06', cambio: {da: '2026-01', quota: 25}}]}, extra);
+
+test('scadenze: a yearly voce the pot cannot reach is flagged with how much is missing (150 of 200 -> 50)', () => {
+  const cfg = {salvadanai: [potCompleanno()]};
+  assert.deepStrictEqual(L.scadenze({}, cfg, '2026-01-15'),
+    [{salvadanaio: 'Compleanno', voce: 'Regali', data: '2026-06', importo: 200, saldoPrevisto: 150, manca: 50, mesi: 5}]);
+  cfg.salvadanai[0].saldoIniziale.importo = 100; // 100 more in the pot: covered
+  const r = L.scadenze({}, cfg, '2026-01-15');
+  assert.deepStrictEqual([r[0].saldoPrevisto, r[0].manca], [250, 0]);
+});
+
+test('scadenze: a voce already paid in its cycle is not listed; a later voce sees the earlier payment taken out', () => {
+  const cfg = {salvadanai: [potCompleanno()]};
+  const pagata = {'2026-01': {a: {d: '2026-01-10', u: 200, c: 'Compleanno', v: 'Regali', k: 'Revolut'}}};
+  assert.deepStrictEqual(L.scadenze(pagata, cfg, '2026-01-15'), []);
+  const due = {nome: 'Auto', gruppo: 'Necessarie', conto: 'Revolut', saldoIniziale: {data: '2026-01-01', importo: 0}, voci: [
+    {nome: 'B', annuale: 150, data: '2026-04', cambio: {da: '2026-01', quota: 20}}, {nome: 'A', annuale: 100, data: '2026-03', cambio: {da: '2026-01', quota: 30}}]};
+  const r = L.scadenze({}, {salvadanai: [due]}, '2026-01-05');
+  assert.deepStrictEqual(r.map(x => [x.voce, x.data, x.saldoPrevisto, x.manca]), [['A', '2026-03', 150, 0], ['B', '2026-04', 100, 50]]);
+});
+
+test('scadenze: the Fondo TCG (sottoZero) and the emergency fund have none', () => {
+  const cfg = {salvadanai: [potCompleanno({nome: 'Fondo TCG', sottoZero: true}), potCompleanno({nome: 'Fondo emergenze'})]};
+  assert.deepStrictEqual(L.scadenze({}, cfg, '2026-01-15'), []);
+});
+
+const cfgAnno = () => ({
+  categorie: [{nome: 'Spesa', gruppo: 'Necessarie', budget: 300}],
+  conti: [{nome: 'Revolut', saldoIniziale: {data: '2026-09-01', importo: 1000}}],
+  salvadanai: [{nome: 'Fondo', gruppo: 'Risparmi', conto: 'Revolut', saldoIniziale: {data: '2026-09-01', importo: 0}, quota: 50}],
+});
+const spesa = (d, u) => ({d: d, u: u, c: 'Spesa', k: 'Revolut'});
+
+test('proiezioneAnno: no data says so instead of inventing figures; pots are still projected', () => {
+  const r = L.proiezioneAnno({}, cfgAnno(), '2026-11-15');
+  assert.strictEqual(r.ritmo.ok, false);
+  assert.strictEqual(r.budget, null);
+  assert.strictEqual(r.patrimonio.ok, false);
+  assert.deepStrictEqual(r.mesi, ['2026-11', '2026-12']);
+  assert.deepStrictEqual([r.salvadanai[0].saldi, r.salvadanai[0].finale], [[150, 200], 200]); // Sep, Oct, Nov = 150, then Dec
+});
+
+test('proiezioneAnno: only the current month of data is not enough for a pace', () => {
+  const r = L.proiezioneAnno({'2026-11': {a: spesa('2026-11-03', 80)}}, cfgAnno(), '2026-11-15');
+  assert.strictEqual(r.ritmo.ok, false);
+  assert.strictEqual(r.ritmo.mesiDati, 0);
+});
+
+test('proiezioneAnno: full months give the pace; budget, pots and net worth follow it', () => {
+  const mesi = {'2026-09': {a: spesa('2026-09-05', 150)}, '2026-10': {a: spesa('2026-10-05', 250)}, '2026-11': {a: spesa('2026-11-03', 100)}};
+  const cfg = cfgAnno();
+  const noPiano = L.proiezioneAnno(mesi, cfg, '2026-11-15');
+  assert.strictEqual(noPiano.ritmo.ok, true);
+  assert.strictEqual(noPiano.ritmo.mesiDati, 2);
+  assert.strictEqual(noPiano.patrimonio.ok, false); // no saved plan
+  cfg.piani = {'2026-10': {stipendio: 1000, righe: [{nome: 'Spesa', importo: 300}, {nome: 'Fondo', importo: 50}]}};
+  const r = L.proiezioneAnno(mesi, cfg, '2026-11-15');
+  // pace = (150 + 250) / 2 = 200; November has 100 so far -> 200 expected; December 200
+  assert.deepStrictEqual(r.budget, [{ym: '2026-11', budget: 300, speso: 200, spendibile: 100}, {ym: '2026-12', budget: 300, speso: 200, spendibile: 100}]);
+  // net worth today 1000 - 150 - 250 - 100 = 500; rest of November -100 -> 400; December +50 (pot) +100 (unspent budget) -> 550
+  assert.deepStrictEqual(r.patrimonio, {ok: true, oggi: 500, fine: 550, serie: [{ym: '2026-11', totale: 400}, {ym: '2026-12', totale: 550}], parziale: false});
+});
+
+test('proiezioneAnno: a pot whose voce falls due before the money is there ends the year below zero', () => {
+  const cfg = {salvadanai: [{nome: 'Auto', gruppo: 'Necessarie', conto: 'Revolut', saldoIniziale: {data: '2026-01-01', importo: 0},
+    voci: [{nome: 'Bollo', annuale: 600, data: '2026-12', cambio: {da: '2026-01', quota: 10}}]}]};
+  const r = L.proiezioneAnno({}, cfg, '2026-11-15');
+  assert.deepStrictEqual([r.salvadanai[0].saldi, r.salvadanai[0].finale, r.salvadanai[0].sotto], [[110, -480], -480, true]);
+  assert.strictEqual(r.scoperte, 1);
+  assert.strictEqual(r.scadenze[0].manca, 480);
+});
+
+test('proiezioneAnno: no accounts means no net worth projection; a voce due this month and the month of December work', () => {
+  const mesi = {'2026-10': {a: spesa('2026-10-05', 150)}}, cfg = cfgAnno();
+  cfg.piani = {'2026-10': {stipendio: 1000, righe: [{nome: 'Spesa', importo: 300}]}};
+  cfg.conti = [];
+  const r = L.proiezioneAnno(mesi, cfg, '2026-12-10');
+  assert.strictEqual(r.patrimonio.ok, false);
+  assert.deepStrictEqual(r.mesi, ['2026-12']);
+  const due = {nome: 'Auto', gruppo: 'Necessarie', conto: 'Revolut', saldoIniziale: {data: '2026-01-01', importo: 0}, voci: [{nome: 'Bollo', annuale: 100, data: '2026-12', cambio: {da: '2026-01', quota: 5}}]};
+  const s = L.scadenze({}, {salvadanai: [due]}, '2026-12-10'); // due this month: balance of the month (12 x 5 = 60), 40 missing
+  assert.deepStrictEqual(s.map(x => [x.data, x.saldoPrevisto, x.manca, x.mesi]), [['2026-12', 60, 40, 0]]);
+});

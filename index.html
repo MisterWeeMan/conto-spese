@@ -167,6 +167,7 @@ details summary{cursor:pointer;font-weight:500}
       <a href="#conti">Conti</a>
       <a href="#patrimonio">Patrimonio</a>
       <a href="#tcg">TCG</a>
+      <a href="#proiezione">Proiezione</a>
       <a href="#salvadanai">Salvadanai</a>
       <a href="#piano">Piano del mese</a>
       <a href="#chiusura">Chiusura del mese</a>
@@ -283,6 +284,7 @@ details summary{cursor:pointer;font-weight:500}
     <a class="btn pri grande" href="#registro">Nuovo movimento</a>
     <a class="stato err" id="cnAvviso" href="#conti" hidden></a>
     <a class="stato err" id="chAvviso" href="#chiusura" hidden></a>
+    <a class="stato err" id="prAvviso" href="#proiezione" hidden></a>
     <section class="box" id="fondoBox" hidden></section>
     <section class="box">
       <div class="testa"><h2>Categorie del mese</h2><span class="stato">residuo = budget del mese − speso, nessun riporto</span></div>
@@ -324,6 +326,29 @@ details summary{cursor:pointer;font-weight:500}
     <section class="box">
       <div class="testa"><h2>Andamento</h2><span class="stato" id="ptSerieNota"></span></div>
       <div id="ptSerie"></div>
+    </section>
+  </div>
+
+  <div class="due" id="pagProiezione" hidden>
+    <section class="box">
+      <div class="hero"><span>Come finisci l'anno</span><b id="prTot">–</b><span id="prDet"></span></div>
+      <p class="stato">Una previsione, non una promessa: si basa sul ritmo dei mesi già completi e sul piano del mese. Non scrive niente.</p>
+    </section>
+    <section class="box">
+      <div class="testa"><h2>Scadenze</h2><span class="stato">il saldo previsto del salvadanaio alla data</span></div>
+      <div id="prScad" class="gruppo"></div>
+    </section>
+    <section class="box">
+      <div class="testa"><h2>Salvadanai a fine mese</h2></div>
+      <div id="prSv"></div>
+    </section>
+    <section class="box">
+      <div class="testa"><h2>Spendibile e speso previsti</h2></div>
+      <div id="prBud"></div>
+    </section>
+    <section class="box">
+      <div class="testa"><h2>Patrimonio previsto</h2></div>
+      <div id="prPat"></div>
     </section>
   </div>
 
@@ -476,7 +501,7 @@ const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
 const {chiusuraProposta, chiusuraCalcola, chiusuraStato, chiusuraMancante, saldoSalvadanaio, mancaRispettoPiano, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, azzeraPiano, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota, saldi, differenzaControllo, ultimoControllo, storicoControlli, controlloScaduto, controlliInRitardo, investimenti, patrimonio, patrimonioSerie, riepilogoGruppi, tassoRisparmio} = window.CSLogic;
-const {validaImporto, validaQuotaJoint, saldoEtichetta} = window.CSLogic;
+const {validaImporto, validaQuotaJoint, saldoEtichetta, proiezioneAnno} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 
 // Field errors sit under the field and block saving until the value is valid. data-eur = euro field (data-eur="zero": 0 and empty allowed).
@@ -583,7 +608,7 @@ function render() {
       : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
   $('etList').innerHTML = [...new Set([...etichette(st.mesi).map(r => r.l), ...(st.cfg.etichette || []).map(x => x?.nome).filter(Boolean)])].map(l => `<option value="${esc(l)}">`).join('');
-  renderForm(); renderCfg(); renderPiano(); renderPm(); renderConti(); renderChiusura(); renderPatrimonio(); renderTcg(); renderAzzera();
+  renderForm(); renderCfg(); renderPiano(); renderPm(); renderConti(); renderChiusura(); renderPatrimonio(); renderTcg(); renderProiezione(); renderAzzera();
 }
 
 // Form selects: active categories and accounts, plus the ones the movement being edited already has (archived or closed).
@@ -1343,14 +1368,43 @@ $('tcPer').addEventListener('change', ev => { st.tcPer = ev.target.value; render
 $('tcVai').addEventListener('click', ev => { ev.preventDefault(); if (st.tcVai) vaiTcg(st.tcVai); });
 $('tcPerMese').addEventListener('click', ev => { const a = ev.target.closest('[data-tcm]'); if (a) { ev.preventDefault(); vaiTcg(a.dataset.tcm); } });
 
+// Projection page (4.2): due dates not covered, pots and net worth to the end of the year. Read-only, nothing is written.
+const tabella = (testa, righe) => `<div class="tabw"><table class="tab"><thead><tr>${testa.map((t, i) => `<th scope="col"${i ? ' class="d"' : ''}>${esc(t)}</th>`).join('')}</tr></thead><tbody>${righe.join('')}</tbody></table></div>`;
+const meseCorto = ym => new Date(+ym.slice(0, 4), +ym.slice(5) - 1, 1).toLocaleDateString('it-IT', {month: 'short', year: '2-digit'});
+function renderProiezione() {
+  const sc = ready() ? proiezioneAnno(st.mesi, st.cfg, todayISO()) : null, av = sc && sc.scoperte ? sc : null; // home notice works from any page
+  $('prAvviso').hidden = !av; if (av) $('prAvviso').textContent = `${av.scoperte} scadenz${av.scoperte === 1 ? 'a' : 'e'} non copert${av.scoperte === 1 ? 'a' : 'e'}: guarda la proiezione`;
+  if ($('pagProiezione').hidden) return;
+  if (!sc) { $('prTot').textContent = '–'; return; }
+  const p = sc.patrimonio, ncop = sc.scoperte;
+  $('prTot').textContent = p.ok ? eur.format(p.fine) : 'Non abbastanza dati';
+  $('prTot').style.color = '';
+  $('prDet').textContent = `${p.ok ? `Patrimonio previsto a fine anno (oggi ${eur.format(p.oggi)}${p.parziale ? ', parziale' : ''}) · ` : ''}${ncop ? `${ncop} scadenz${ncop === 1 ? 'a' : 'e'} non copert${ncop === 1 ? 'a' : 'e'}` : 'tutte le scadenze coperte'}`;
+  $('prScad').innerHTML = sc.scadenze.map(x => {
+    const ok = x.manca < 0.005, ex = x.mesi > 0 ? `alza la quota di ${eur.format(x.manca / x.mesi)} al mese per ${x.mesi} mes${x.mesi === 1 ? 'e' : 'i'}` : 'scade questo mese: copri con un\'altra busta';
+    return `<div class="riga"><span class="nome">${esc(x.voce)} · ${esc(x.salvadanaio)}</span><span class="res ${ok ? '' : 'delta neg'}">${ok ? 'coperta' : 'manca ' + eur.format(x.manca)}</span>
+      <span class="det">${nomeMese(x.data)} · ${eur.format(x.importo)} · saldo previsto ${eur.format(x.saldoPrevisto)}${ok ? '' : ' · ' + ex}</span></div>`;
+  }).join('') || '<p class="vuoto">Nessuna voce con una scadenza in arrivo.</p>';
+  const cella = (n, bad) => `<td class="d${bad ? ' delta neg' : ''}">${eur.format(n)}</td>`;
+  $('prSv').innerHTML = sc.salvadanai.length ? tabella(['Salvadanaio', ...sc.mesi.map(meseCorto)], sc.salvadanai.map(v => `<tr><td>${esc(v.nome)}${v.sotto ? ' ⚠' : ''}</td>${v.saldi.map(n => cella(n, n < -0.005 && !v.sottoZero)).join('')}</tr>`))
+    + (sc.salvadanai.some(v => v.sotto) ? '<p class="stato err">⚠ Finisce l\'anno sotto zero: un pagamento in scadenza supera quello che il salvadanaio avrà messo da parte.</p>' : '')
+    : '<p class="vuoto">Nessun salvadanaio.</p>';
+  $('prBud').innerHTML = sc.budget ? tabella(['Mese', 'Budget', 'Speso previsto', 'Spendibile'], sc.budget.map(b => `<tr><td>${esc(nomeMese(b.ym))}</td>${cella(b.budget)}${cella(b.speso)}${cella(b.spendibile, b.spendibile < 0)}</tr>`))
+    + `<p class="stato">Ritmo = speso medio mensile di ogni categoria nei ${sc.ritmo.mesiDati} mes${sc.ritmo.mesiDati === 1 ? 'e completo' : 'i completi'} con movimenti${sc.ritmo.mesiDati === 1 ? ' (poco: la previsione è fragile)' : ''}. Il mese in corso conta il più alto tra il già speso e il ritmo.</p>`
+    : '<p class="vuoto">Non abbastanza dati: serve almeno un mese completo con movimenti oltre a quello in corso.</p>';
+  $('prPat').innerHTML = p.ok ? tabella(['Mese', 'Patrimonio'], p.serie.map(x => `<tr><td>${esc(nomeMese(x.ym))}</td>${cella(x.totale)}</tr>`))
+    + '<p class="stato">Patrimonio di oggi, meno il resto della spesa del mese e le scadenze da pagare, più ogni mese quello che il piano mette nei salvadanai e i budget non spesi. Lo stipendio del mese in corso si considera già arrivato.</p>'
+    : `<p class="vuoto">Non abbastanza dati. ${esc(p.motivo)}</p>`;
+}
+
 // Side menu: the page is the URL hash, so the phone back button works
 $('menuApri').addEventListener('click', () => $('menu').showModal());
 $('menu').addEventListener('click', ev => { if (ev.target === $('menu') || ev.target.closest('a,#menuChiudi')) $('menu').close(); });
 function pagina() {
-  const titoli = {'#categorie': 'Categorie', '#salvadanai': 'Salvadanai', '#piano': 'Piano del mese', '#permettermelo': 'Posso permettermelo?', '#config': 'Configurazione', '#registro': 'Registro', '#conti': 'Conti', '#chiusura': 'Chiusura del mese', '#patrimonio': 'Patrimonio', '#tcg': 'TCG'};
+  const titoli = {'#categorie': 'Categorie', '#salvadanai': 'Salvadanai', '#piano': 'Piano del mese', '#permettermelo': 'Posso permettermelo?', '#config': 'Configurazione', '#registro': 'Registro', '#conti': 'Conti', '#chiusura': 'Chiusura del mese', '#patrimonio': 'Patrimonio', '#tcg': 'TCG', '#proiezione': 'Proiezione'};
   const p = titoli[location.hash] ? location.hash : ''; // any other hash is the home
-  $('pagCategorie').hidden = p !== '#categorie'; $('pagConfig').hidden = p !== '#config'; $('pagSalvadanai').hidden = p !== '#salvadanai'; $('pagPiano').hidden = p !== '#piano'; $('pagPermettermelo').hidden = p !== '#permettermelo'; $('pagConti').hidden = p !== '#conti'; $('pagChiusura').hidden = p !== '#chiusura'; $('pagPatrimonio').hidden = p !== '#patrimonio'; $('pagTcg').hidden = p !== '#tcg';
-  $('mese').hidden = p === '#categorie' || p === '#config' || p === '#salvadanai' || p === '#conti' || p === '#chiusura' || p === '#patrimonio' || p === '#tcg';
+  $('pagCategorie').hidden = p !== '#categorie'; $('pagConfig').hidden = p !== '#config'; $('pagSalvadanai').hidden = p !== '#salvadanai'; $('pagPiano').hidden = p !== '#piano'; $('pagPermettermelo').hidden = p !== '#permettermelo'; $('pagConti').hidden = p !== '#conti'; $('pagChiusura').hidden = p !== '#chiusura'; $('pagPatrimonio').hidden = p !== '#patrimonio'; $('pagTcg').hidden = p !== '#tcg'; $('pagProiezione').hidden = p !== '#proiezione';
+  $('mese').hidden = p === '#categorie' || p === '#config' || p === '#salvadanai' || p === '#conti' || p === '#chiusura' || p === '#patrimonio' || p === '#tcg' || p === '#proiezione';
   $('pagHome').hidden = !!p; $('pagRegistro').hidden = p !== '#registro';
   $('titolo').textContent = titoli[p] || 'Conto Spese';
   if (p === '#piano') { st.pnYm = null; renderPiano(); } // reopen: pick up budgets and pots changed meanwhile (an unsaved draft is dropped)
@@ -1359,6 +1413,7 @@ function pagina() {
   if (p === '#chiusura') renderChiusura();
   if (p === '#patrimonio') renderPatrimonio();
   if (p === '#tcg') renderTcg();
+  if (p === '#proiezione') renderProiezione();
   if (p === '#config') renderAzzera();
   for (const a of $('menu').querySelectorAll('a')) a.hash === p ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
 }
