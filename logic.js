@@ -198,6 +198,9 @@
     (c.revisioni || []).forEach(function (r) {
       if (!trimReg.test(r.trimestre || '') || !day.test(r.data || '') || !real(r.data)) err.push('Review ' + r.trimestre + ' is not valid');
     });
+    if (c.ricorrenti != null && !Array.isArray(c.ricorrenti)) err.push('ricorrenti is not a list');
+    (Array.isArray(c.ricorrenti) ? c.ricorrenti : []).forEach(function (r) { validaRicorrente(r || {}).forEach(function (e) { err.push('Recurring ' + ((r && r.nome) || '?') + ': ' + e); }); });
+    if (c.ricorrentiSaltate != null && !(Array.isArray(c.ricorrentiSaltate) && c.ricorrentiSaltate.every(function (k) { return typeof k === 'string'; }))) err.push('ricorrentiSaltate is not a list of keys');
     var inv = c.investimenti;
     if (inv && conti.indexOf(inv.conto) < 0) err.push('investimenti: account ' + inv.conto + ' does not exist');
     (inv && inv.valore || []).forEach(function (v) { if (!day.test(v.d || '') || !real(v.d) || !num(v.importo) || v.importo < 0) err.push('investimenti: value ' + v.d + ' is not valid'); });
@@ -951,7 +954,67 @@
     return (lista || []).filter(function (x) { return x.trimestre !== r.trimestre; }).concat([r]).sort(function (a, b) { return a.trimestre < b.trimestre ? -1 : a.trimestre > b.trimestre ? 1 : 0; });
   }
 
-  var api = {trimestreDi: trimestreDi, trimestreMesi: trimestreMesi, trimestreFine: trimestreFine, trimestreDefault: trimestreDefault, promemoriaRevisione: promemoriaRevisione, obiettivoCollegato: obiettivoCollegato, revisioneTrimestre: revisioneTrimestre, validaRevisione: validaRevisione, revisioniCon: revisioniCon, scadenze: scadenze, proiezioneAnno: proiezioneAnno, saldoEtichetta: saldoEtichetta, azzeraPiano: azzeraPiano, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, mancaRispettoPiano: mancaRispettoPiano, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  // ---- 4.4 recurring templates: cfg.ricorrenti = [{id, nome, tipo: spesa|entrata|giroconto, importo, categoria, conto, aConto?, giorno, cadenza: mensile|annuale|mesi (+ ogni),
+  // da, fino?, etichette?, nota?}]. The tool never writes by itself: it proposes the occurrences due, the user confirms (rc = '<id>:<date>' on the movement) or skips (cfg.ricorrentiSaltate).
+  function validaRicorrente(r) {
+    var err = [], day = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, real = function (s) { return day.test(s || '') && !isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s; };
+    if (!r.id || String(r.id).indexOf(':') >= 0) err.push('Identificativo non valido');
+    if (!String(r.nome || '').trim()) err.push('Scrivi il nome');
+    if (['spesa', 'entrata', 'giroconto'].indexOf(r.tipo) < 0) err.push('Tipo non valido');
+    if (!(typeof r.importo === 'number' && r.importo > 0)) err.push('Importo non valido');
+    if (!r.conto) err.push('Scegli il conto');
+    if ((r.tipo === 'spesa' || r.tipo === 'entrata') && !r.categoria) err.push('Scegli la categoria');
+    if (r.tipo === 'giroconto' && (!r.aConto || r.aConto === r.conto)) err.push('Scegli due conti diversi');
+    if (!(r.giorno >= 1 && r.giorno <= 31 && r.giorno % 1 === 0)) err.push('Il giorno va da 1 a 31');
+    if (['mensile', 'annuale', 'mesi'].indexOf(r.cadenza) < 0) err.push('Cadenza non valida');
+    if (r.cadenza === 'mesi' && !(r.ogni >= 2 && r.ogni <= 24 && r.ogni % 1 === 0)) err.push('Ogni quanti mesi: da 2 a 24');
+    if (!real(r.da)) err.push('Data di inizio non valida');
+    if (r.fino && (!real(r.fino) || r.fino < r.da)) err.push('La data di fine non è valida o precede l\'inizio');
+    return err;
+  }
+  function giorniDopo(d, n) { var t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }
+  // Dates of a valid template from its start up to lim (and its end): the day of the month, or the last day of a shorter month; the cycle is anchored on the month of `da`.
+  function dateRicorrente(r, lim) {
+    var step = r.cadenza === 'annuale' ? 12 : r.cadenza === 'mesi' ? r.ogni : 1, out = [], y = +r.da.slice(0, 4), m = +r.da.slice(5, 7) - 1;
+    if (r.fino && r.fino < lim) lim = r.fino;
+    for (;; m += step) {
+      var yy = y + Math.floor(m / 12), mm = m % 12, ult = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate();
+      var d = yy + '-' + ('0' + (mm + 1)).slice(-2) + '-' + ('0' + Math.min(r.giorno, ult)).slice(-2);
+      if (d > lim) return out;
+      if (d >= r.da) out.push(d);
+    }
+  }
+  // Occurrences overdue or due within 3 days with no live movement carrying their rc and not skipped: {proposte: [{...template, modelloId, data, chiave, avviso}], vecchie}.
+  // At most the last 3 per template; `vecchie` counts the older ones left out. shortcut: a confirmed movement that is later deleted makes its occurrence due again.
+  function ricorrentiDovute(cfg, mesi, oggi) {
+    var fatte = {}, lim = giorniDopo(oggi, 3), out = [], vecchie = 0;
+    Object.keys(mesi || {}).forEach(function (ym) { movs(mesi, ym).forEach(function (m) { if (m.rc) fatte[m.rc] = 1; }); });
+    (cfg.ricorrentiSaltate || []).forEach(function (k) { fatte[k] = 1; });
+    (cfg.ricorrenti || []).forEach(function (r) {
+      if (validaRicorrente(r).length) return;
+      var chiuso = function (k) { return (cfg.conti || []).some(function (c) { return c.nome === k && c.chiuso; }); };
+      var avviso = chiuso(r.conto) ? 'Conto chiuso: ' + r.conto : r.aConto && chiuso(r.aConto) ? 'Conto chiuso: ' + r.aConto
+        : (cfg.categorie || []).some(function (c) { return c.nome === r.categoria && c.archiviata; }) ? 'Categoria archiviata: ' + r.categoria : '';
+      var dovute = dateRicorrente(r, lim).filter(function (d) { return !fatte[r.id + ':' + d]; });
+      vecchie += Math.max(0, dovute.length - 3);
+      dovute.slice(-3).forEach(function (d) { out.push(Object.assign({}, r, {modelloId: r.id, data: d, chiave: r.id + ':' + d, avviso: avviso})); });
+    });
+    out.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : a.nome.localeCompare(b.nome, 'it'); });
+    return {proposte: out, vecchie: vecchie};
+  }
+  // The movement a proposal becomes, with every field the form writes: {m} (plus {err} when Joint has no share in force). `importo` overrides the template's amount.
+  function movimentoRicorrente(cfg, occ, importo) {
+    var imp = importo != null ? importo : occ.importo, g = occ.tipo === 'giroconto', ent = occ.tipo === 'entrata';
+    var m = {d: occ.data, n: occ.nota || occ.nome, e: ent ? imp : 0, u: ent ? 0 : imp, c: g ? '' : occ.categoria, k: occ.conto, a: g ? occ.aConto : '', r: '', b: '', p: null, q: null, l: (occ.etichette || []).slice(), v: '', t: g ? 'g' : '', x: 0, rc: occ.chiave};
+    if (occ.tipo === 'spesa' && contoJoint(cfg, m.k)) {
+      var jq = quotaMov(cfg, m);
+      if (!jq) return {m: m, err: 'Nessuna quota del Joint valida a questa data: impostala in Configurazione'}; // m without p/q, so the form can still open
+      Object.assign(m, jq);
+    }
+    return {m: m};
+  }
+
+  var api = {ricorrentiDovute: ricorrentiDovute, movimentoRicorrente: movimentoRicorrente, validaRicorrente: validaRicorrente, trimestreDi: trimestreDi, trimestreMesi: trimestreMesi, trimestreFine: trimestreFine, trimestreDefault: trimestreDefault, promemoriaRevisione: promemoriaRevisione, obiettivoCollegato: obiettivoCollegato, revisioneTrimestre: revisioneTrimestre, validaRevisione: validaRevisione, revisioniCon: revisioniCon, scadenze: scadenze, proiezioneAnno: proiezioneAnno, saldoEtichetta: saldoEtichetta, azzeraPiano: azzeraPiano, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, mancaRispettoPiano: mancaRispettoPiano, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

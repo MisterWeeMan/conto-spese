@@ -1447,3 +1447,86 @@ test('validaConfig checks obiettivi and revisioni', () => {
   assert.ok(L.validaConfig({...rvCfg, revisioni: [{trimestre: 'bad', data: '2027-03-30'}]}).length);
   assert.deepStrictEqual(L.validaConfig({...rvCfg, revisioni: [{trimestre: '2027-Q1', data: '2027-03-30', decisioni: 'x', obiettivi: []}]}), []); // a valid review passes
 });
+
+// ---- 4.4 recurring templates (made-up data): proposals to confirm, never written by the tool ----
+const rcCfg = {
+  conti: [{nome: 'Banca A'}, {nome: 'Inv', }, {nome: 'Cassa Comune', joint: true}, {nome: 'Vecchio', chiuso: true}],
+  categorie: [{nome: 'Svago', gruppo: 'Non necessarie', budget: 50}, {nome: 'Casa', gruppo: 'Necessarie', budget: 300}, {nome: 'Vecchia', archiviata: true}, {nome: 'Paga', entrata: true, finanzia: true}],
+  quotaJoint: [{da: '2027-01-01', pct: 60}],
+  ricorrenti: [{id: 'r1', nome: 'Abbonamento', tipo: 'spesa', importo: 9.99, categoria: 'Svago', conto: 'Banca A', giorno: 31, cadenza: 'mensile', da: '2027-01-01'}]
+};
+
+test('ricorrentiDovute: monthly on day 31 falls on the last day of a short month, window is today + 3 days', () => {
+  const r = L.ricorrentiDovute(rcCfg, {}, '2027-02-26'); // 28 Feb is within 3 days
+  assert.deepStrictEqual(r.proposte.map(p => p.data), ['2027-01-31', '2027-02-28']);
+  assert.strictEqual(r.proposte[1].chiave, 'r1:2027-02-28');
+  assert.strictEqual(r.vecchie, 0);
+  assert.deepStrictEqual(L.ricorrentiDovute(rcCfg, {}, '2027-02-24').proposte.map(p => p.data), ['2027-01-31']); // 28 Feb is 4 days away
+});
+
+test('ricorrentiDovute: annual, every N months, from/to limits', () => {
+  const cfg = {...rcCfg, ricorrenti: [
+    {id: 'an', nome: 'Assic', tipo: 'spesa', importo: 400, categoria: 'Casa', conto: 'Banca A', giorno: 15, cadenza: 'annuale', da: '2026-03-01'},
+    {id: 'tr', nome: 'Trim', tipo: 'spesa', importo: 30, categoria: 'Casa', conto: 'Banca A', giorno: 5, cadenza: 'mesi', ogni: 3, da: '2027-01-01', fino: '2027-07-31'}]};
+  const r = L.ricorrentiDovute(cfg, {}, '2027-12-31').proposte;
+  assert.deepStrictEqual(r.filter(p => p.modelloId === 'an').map(p => p.data), ['2026-03-15', '2027-03-15']);
+  assert.deepStrictEqual(r.filter(p => p.modelloId === 'tr').map(p => p.data), ['2027-01-05', '2027-04-05', '2027-07-05']); // Oct is past "fino"
+  assert.deepStrictEqual(L.ricorrentiDovute({...cfg, ricorrenti: [{...cfg.ricorrenti[1], da: '2027-01-20'}]}, {}, '2027-02-01').proposte, []); // first day before "da"
+});
+
+test('ricorrentiDovute: confirmed (rc on a live movement) or skipped occurrences are not proposed again, even with another amount or date', () => {
+  const mesi = {'2027-02': {a: {d: '2027-02-03', u: 11, rc: 'r1:2027-01-31'}, b: {d: '2027-02-10', u: 9.99, rc: 'r1:2027-02-28', x: 1}}};
+  const r = L.ricorrentiDovute({...rcCfg, ricorrentiSaltate: ['r1:2027-03-31']}, mesi, '2027-04-02');
+  assert.deepStrictEqual(r.proposte.map(p => p.data), ['2027-02-28']); // 31 Jan confirmed, 28 Feb confirmed then deleted (due again), 31 Mar skipped, 30 Apr beyond 3 days
+});
+
+test('ricorrentiDovute: at most the last 3 pending per template, the number of older ones is reported', () => {
+  const r = L.ricorrentiDovute(rcCfg, {}, '2027-06-01');
+  assert.deepStrictEqual(r.proposte.map(p => p.data), ['2027-03-31', '2027-04-30', '2027-05-31']);
+  assert.strictEqual(r.vecchie, 2); // January, February
+});
+
+test('ricorrentiDovute: flags a closed account or an archived category', () => {
+  const cfg = {...rcCfg, ricorrenti: [{...rcCfg.ricorrenti[0], conto: 'Vecchio'}, {...rcCfg.ricorrenti[0], id: 'r2', categoria: 'Vecchia'}]};
+  const r = L.ricorrentiDovute(cfg, {}, '2027-01-31').proposte;
+  assert.match(r.find(p => p.modelloId === 'r1').avviso, /chiuso/);
+  assert.match(r.find(p => p.modelloId === 'r2').avviso, /archiviata/);
+  assert.strictEqual(L.ricorrentiDovute(rcCfg, {}, '2027-01-31').proposte[0].avviso, '');
+});
+
+test('movimentoRicorrente builds the full movement: expense, Joint share, transfer, income', () => {
+  const occ = (o, data) => ({modelloId: o.id, data, chiave: o.id + ':' + data, ...o});
+  const sp = L.movimentoRicorrente(rcCfg, occ(rcCfg.ricorrenti[0], '2027-01-31')).m;
+  assert.deepStrictEqual(sp, {d: '2027-01-31', n: 'Abbonamento', e: 0, u: 9.99, c: 'Svago', k: 'Banca A', a: '', r: '', b: '', p: null, q: null, l: [], v: '', t: '', x: 0, rc: 'r1:2027-01-31'});
+  const j = L.movimentoRicorrente(rcCfg, occ({...rcCfg.ricorrenti[0], id: 'rj', importo: 100, conto: 'Cassa Comune'}, '2027-01-31')).m;
+  assert.strictEqual(j.q, 60); assert.strictEqual(j.p, 60); assert.strictEqual(j.u, 100);
+  assert.ok(L.movimentoRicorrente({...rcCfg, quotaJoint: []}, occ({...rcCfg.ricorrenti[0], conto: 'Cassa Comune'}, '2027-01-31')).err); // no share in force
+  const g = L.movimentoRicorrente(rcCfg, occ({id: 'pac', nome: 'PAC', tipo: 'giroconto', importo: 50, conto: 'Banca A', aConto: 'Inv', giorno: 12, cadenza: 'mensile', da: '2027-01-01', etichette: ['PAC'], nota: 'PAC mensile'}, '2027-01-12')).m;
+  assert.deepStrictEqual([g.t, g.k, g.a, g.u, g.e, g.c, g.n, g.l], ['g', 'Banca A', 'Inv', 50, 0, '', 'PAC mensile', ['PAC']]);
+  const e = L.movimentoRicorrente(rcCfg, occ({id: 'st', nome: 'Stipendio', tipo: 'entrata', importo: 1000, categoria: 'Paga', conto: 'Banca A', giorno: 10, cadenza: 'mensile', da: '2027-01-01'}, '2027-01-10')).m;
+  assert.deepStrictEqual([e.e, e.u, e.c, e.t], [1000, 0, 'Paga', '']);
+  assert.strictEqual(L.movimentoRicorrente(rcCfg, occ(rcCfg.ricorrenti[0], '2027-01-31'), 12.5).m.u, 12.5); // amount changed at confirmation
+});
+
+test('validaRicorrente', () => {
+  const ok = rcCfg.ricorrenti[0];
+  assert.deepStrictEqual(L.validaRicorrente(ok), []);
+  assert.ok(L.validaRicorrente({...ok, nome: ''}).length);
+  assert.ok(L.validaRicorrente({...ok, importo: 0}).length);
+  assert.ok(L.validaRicorrente({...ok, giorno: 32}).length);
+  assert.ok(L.validaRicorrente({...ok, cadenza: 'mesi'}).length); // needs "ogni" 2..24
+  assert.ok(L.validaRicorrente({...ok, cadenza: 'boh'}).length);
+  assert.ok(L.validaRicorrente({...ok, da: '2027-02-30'}).length);
+  assert.ok(L.validaRicorrente({...ok, fino: '2026-12-31'}).length); // before "da"
+  assert.ok(L.validaRicorrente({...ok, categoria: ''}).length); // spesa needs a category
+  assert.deepStrictEqual(L.validaRicorrente({...ok, tipo: 'giroconto', categoria: '', aConto: 'Inv'}), []);
+  assert.ok(L.validaRicorrente({...ok, tipo: 'giroconto', categoria: '', aConto: 'Banca A'}).length); // same account
+  assert.ok(L.validaRicorrente({...ok, tipo: 'altro'}).length);
+});
+
+test('validaConfig checks ricorrenti and ricorrentiSaltate (import path)', () => {
+  assert.deepStrictEqual(L.validaConfig(rcCfg), []);
+  assert.ok(L.validaConfig({...rcCfg, ricorrenti: [{...rcCfg.ricorrenti[0], importo: -1}]}).length);
+  assert.ok(L.validaConfig({...rcCfg, ricorrenti: 'x'}).length);
+  assert.ok(L.validaConfig({...rcCfg, ricorrentiSaltate: 'x'}).length);
+});

@@ -38,6 +38,8 @@ Termini dello strumento, in italiano. Gli stessi nomi vanno usati nel codice e n
 - **Stipendio che finanzia il mese**: l'unica categoria di entrata con il flag "finanzia il mese". Un'entrata in qualsiasi altra categoria di entrata (l'ex **entrata extra**: tredicesima, rimborsi, vendita carte) non tocca il mese: quando arriva, decido dove va.
 - **Credito**: soldi che qualcuno mi deve. Non è una mia spesa. Una spesa divisa si chiude con un rimborso; un prestito si chiude quando i rimborsi (anche a rate) arrivano all'importo.
 - **Credito iniziale**: il credito residuo al giorno del passaggio, registrato come credito senza conto (non muove nessun saldo) con importo, data e nota. Non è patrimonio.
+- **Spesa ricorrente** (modello ricorrente): spesa, entrata o giroconto che si ripete (abbonamento, rata, PAC mensile, giroconto al Joint il giorno dello stipendio). Ha importo, conto, categoria, giorno, cadenza (mensile, annuale, ogni N mesi) e un periodo (da, fino a). Da sola non registra niente.
+- **Proposta da confermare**: l'occorrenza scaduta (o in scadenza nei prossimi 3 giorni) di una spesa ricorrente, già compilata, in Registro → «Da confermare». La confermo con un tocco, la modifico (importo, conto, data) o la salto; solo alla conferma diventa un normale movimento, che ricorda la sua occorrenza (`rc`) così non ricompare.
 - **Etichetta**: dettaglio dentro una categoria o ambito trasversale (TCG). Mostra quanto pesa; nessun budget proprio.
 - **Saldo dell'etichetta**: entrate meno uscite dei movimenti con quell'etichetta in un periodo (per TCG: quanto guadagno o perdo con le carte). Informazione, non budget: non entra nello spendibile né nel piano. Non è il saldo del **Fondo TCG**, che è un salvadanaio.
 

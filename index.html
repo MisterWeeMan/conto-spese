@@ -77,6 +77,7 @@ input[type=checkbox]{width:auto}
 label.chk{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--ink)}
 .cfriga{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px 14px;align-items:center}
 .cfriga .btn{padding:4px 10px}
+.riga .azioni{grid-column:1/-1}.riga .azioni .btn{padding:6px 12px;flex:none}
 .tipo{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .tipo label{flex-direction:row;justify-content:center;padding:9px;font-size:14px;cursor:pointer;color:var(--ink)}
 #altro summary{font-size:14px;font-weight:500;color:var(--muted);padding:8px 2px}
@@ -288,6 +289,7 @@ details summary{cursor:pointer;font-weight:500}
     <a class="stato err" id="chAvviso" href="#chiusura" hidden></a>
     <a class="stato err" id="prAvviso" href="#proiezione" hidden></a>
     <a class="stato err" id="rvAvviso" href="#revisione" hidden></a>
+    <a class="stato err" id="rcAvviso" href="#registro" hidden></a>
     <section class="box" id="fondoBox" hidden></section>
     <section class="box">
       <div class="testa"><h2>Categorie del mese</h2><span class="stato">residuo = budget del mese − speso, nessun riporto</span></div>
@@ -453,6 +455,28 @@ details summary{cursor:pointer;font-weight:500}
         <label><span>Quota (%)<b class="ob" aria-hidden="true">*</b></span><input id="quotaPct" inputmode="numeric" required placeholder="Es. 56"></label>
         <div class="azioni tutta"><button class="btn pri" type="submit">Aggiungi quota</button></div></form>
     </section>
+    <section class="box" id="rcCfgBox">
+      <h2>Ricorrenti</h2>
+      <p class="stato">Spese, entrate o giroconti che si ripetono (un abbonamento, una rata, il PAC). Non vengono mai registrati da soli: alla scadenza compaiono in Registro, «Da confermare», e li controlli tu. Con «Ogni anno» o «Ogni N mesi» il ciclo parte dal mese di «Dal»; se il mese è più corto vale l'ultimo giorno.</p>
+      <div class="cfriga" id="rcElenco"></div>
+      <form id="rcForm" autocomplete="off">
+        <p class="stato tutta">* obbligatorio</p>
+        <label class="tutta"><span>Nome<b class="ob" aria-hidden="true">*</b></span><input id="rcNome" maxlength="40" placeholder="Es. PAC mensile"></label>
+        <label><span>Tipo<b class="ob" aria-hidden="true">*</b></span><select id="rcTipo"><option value="spesa">Spesa</option><option value="entrata">Entrata</option><option value="giroconto">Giroconto</option></select></label>
+        <label><span>Importo (€)<b class="ob" aria-hidden="true">*</b></span><input id="rcImporto" inputmode="decimal" data-eur placeholder="0,00"></label>
+        <label id="rcCatL"><span>Categoria<b class="ob" aria-hidden="true">*</b></span><select id="rcCat"></select></label>
+        <label><span>Conto<b class="ob" aria-hidden="true">*</b></span><select id="rcConto"></select></label>
+        <label id="rcContoAL" hidden><span>Conto di arrivo<b class="ob" aria-hidden="true">*</b></span><select id="rcContoA"></select></label>
+        <label><span>Cadenza<b class="ob" aria-hidden="true">*</b></span><select id="rcCad"><option value="mensile">Ogni mese</option><option value="annuale">Ogni anno</option><option value="mesi">Ogni N mesi</option></select></label>
+        <label id="rcOgniL" hidden><span>Ogni quanti mesi<b class="ob" aria-hidden="true">*</b></span><input id="rcOgni" inputmode="numeric" placeholder="Da 2 a 24"></label>
+        <label><span>Giorno del mese<b class="ob" aria-hidden="true">*</b></span><input id="rcGiorno" inputmode="numeric" placeholder="Da 1 a 31"></label>
+        <label><span>Dal<b class="ob" aria-hidden="true">*</b></span><input id="rcDa" type="date"></label>
+        <label><span>Fino al</span><input id="rcFino" type="date"></label>
+        <label class="tutta">Etichette<input id="rcEti" list="etList" placeholder="Separate da virgola. Es. PAC"></label>
+        <label class="tutta">Nota<input id="rcNota" placeholder="Vuota = il nome"></label>
+        <div class="azioni tutta"><button class="btn pri" id="rcSalva" type="submit">Aggiungi</button><button class="btn" id="rcAnnulla" type="button" hidden>Annulla</button></div>
+      </form>
+    </section>
     <section class="box">
       <h2>Dati</h2>
       <p class="stato">Carica un file JSON con <code>mesi</code> (movimenti) e/o <code>config</code> (configurazione), come <code>dati/config-2027.json</code>. I movimenti già presenti con lo stesso identificativo vengono sovrascritti, gli altri restano. Una configurazione nuova sostituisce le liste di categorie, conti e salvadanai, la quota Joint, le soglie e i piani dei mesi nel file. Il file viene controllato prima di scrivere: se non va, vedi il motivo.</p>
@@ -471,6 +495,11 @@ details summary{cursor:pointer;font-weight:500}
   </div>
 
   <div class="pag" id="pagRegistro">
+  <section class="box" id="rcBox" hidden>
+    <div class="testa"><h2>Da confermare</h2><span class="stato" id="rcConta"></span></div>
+    <p class="stato">Movimenti ricorrenti in scadenza. Niente viene registrato finché non confermi: puoi cambiare importo, conto o data con Modifica, oppure Saltare.</p>
+    <div class="gruppo" id="rcLista"></div>
+  </section>
   <div class="griglia">
     <section class="box" id="boxForm">
       <h2 id="formTitolo">Nuovo movimento</h2>
@@ -537,7 +566,7 @@ const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
 const {chiusuraProposta, chiusuraCalcola, chiusuraStato, chiusuraMancante, saldoSalvadanaio, mancaRispettoPiano, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, azzeraPiano, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota, saldi, differenzaControllo, ultimoControllo, storicoControlli, controlloScaduto, controlliInRitardo, investimenti, patrimonio, patrimonioSerie, riepilogoGruppi, tassoRisparmio} = window.CSLogic;
-const {validaImporto, validaQuotaJoint, saldoEtichetta, proiezioneAnno} = window.CSLogic;
+const {validaImporto, validaQuotaJoint, saldoEtichetta, proiezioneAnno, ricorrentiDovute, movimentoRicorrente, validaRicorrente} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 
 // Field errors sit under the field and block saving until the value is valid. data-eur = euro field (data-eur="zero": 0 and empty allowed).
@@ -644,7 +673,7 @@ function render() {
       : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
   $('etList').innerHTML = [...new Set([...etichette(st.mesi).map(r => r.l), ...(st.cfg.etichette || []).map(x => x?.nome).filter(Boolean)])].map(l => `<option value="${esc(l)}">`).join('');
-  renderForm(); renderCfg(); renderPiano(); renderPm(); renderConti(); renderChiusura(); renderPatrimonio(); renderTcg(); renderProiezione(); renderRevisione(); renderAzzera();
+  renderForm(); renderCfg(); renderPiano(); renderPm(); renderConti(); renderChiusura(); renderPatrimonio(); renderTcg(); renderProiezione(); renderRevisione(); renderAzzera(); renderRicorrenti();
 }
 
 // Form selects: active categories and accounts, plus the ones the movement being edited already has (archived or closed).
@@ -735,7 +764,7 @@ let tT; function toast(msg, ms = 2600) { $('toast').textContent = msg; $('toast'
 const errore = e => toast('Non salvato: ' + (e?.code === 'permission-denied' ? 'accesso negato dal database' : e?.message || e?.code || 'errore sconosciuto'));
 
 function setEdit(m) {
-  st.edit = m ? {id: m.id, ym: m.d.slice(0, 7), t: m.t, b: m.b, q: m.q, d: m.d, c: m.c, k: m.k, a: m.a, r: m.r} : null;
+  st.edit = m ? {id: m.id, ym: m.d.slice(0, 7), t: m.t, b: m.b, q: m.q, d: m.d, c: m.c, k: m.k, a: m.a, r: m.r, rc: m.rc} : null;
   $('formTitolo').textContent = m ? 'Modifica movimento' : 'Nuovo movimento';
   $('salva').textContent = m ? 'Salva modifiche' : 'Aggiungi';
   $('elimina').hidden = $('annulla').hidden = !m;
@@ -762,6 +791,7 @@ function setEdit(m) {
 
 // Not awaited: without network the promise settles only when the connection is back; the list updates at once from the local cache.
 // merge:true touches only this movement and creates the month if missing.
+const nuovoId = () => 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const scrivi = (ym, id, corpo) => setDoc(refMese(ym), {mov: {[id]: corpo}}, {merge: true}).catch(errore);
 
 $('form').addEventListener('input', ev => {
@@ -793,7 +823,7 @@ $('form').addEventListener('submit', async ev => {
   const m = {d: $('data').value, n: $('nota').value.trim(), e: entra ? imp : 0, u: entra ? 0 : imp, c, k, a, r, b, p: null, q: null,
     l: $('etichette').closest('[data-per]').hidden ? [] : parseEtichette($('etichette').value),
     v: t === 'u' && !$('voceL').hidden ? $('voce').value : '',
-    t: t === 'u' || t === 'e' ? '' : t, x: 0};
+    t: t === 'u' || t === 'e' ? '' : t, x: 0, rc: st.edit?.rc || ''}; // rc: the recurring occurrence this movement confirms (4.4)
   if (t === 'u' && contoJoint(st.cfg, k)) {
     const jq = quotaMov(st.cfg, m, qFissa());
     if (!jq) return fail('Nessuna quota del Joint valida a questa data: impostala in Configurazione', 'data');
@@ -804,7 +834,7 @@ $('form').addEventListener('submit', async ev => {
     if (p >= imp) return fail('La mia parte deve essere minore dell\'importo', 'parte');
     m.p = p;
   }
-  const ym = m.d.slice(0, 7), id = st.edit?.id || 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const ym = m.d.slice(0, 7), id = st.edit?.id || (st.edit?.rc ? 'rc-' + st.edit.rc : nuovoId()); // a proposal opened with Modifica has no id: it is new, with an id fixed by its occurrence so a double tap cannot write it twice
   // shortcut: a pot never goes below zero, so an expense above its balance is refused and the user splits it by hand
   // (the part the pot covers on its name, the rest on another envelope); a picker for the covering envelope can come later.
   if (usoFondoSenzaNota(st.cfg, m)) return fail('Ogni uso del fondo emergenze richiede una nota: scrivi il motivo', 'nota');
@@ -816,9 +846,9 @@ $('form').addEventListener('submit', async ev => {
     const dopo = {...st.mesi, [ym]: {...st.mesi[ym], [id]: {...st.mesi[ym]?.[id], ...m}}};
     const avvisi = t === 'u' ? soglieSuperate(st.mesi, dopo, st.cfg, ym).filter(x => x.c === m.c) : [];
     scrivi(ym, id, m);
-    if (st.edit && st.edit.ym !== ym) scrivi(st.edit.ym, id, {x: 1});
+    if (st.edit?.id && st.edit.ym !== ym) scrivi(st.edit.ym, id, {x: 1});
     if (m.k) ricorda('conto', m.k);
-    toast((st.edit ? 'Modifiche salvate' : `Aggiunto: ${eur.format(net(m))}${m.c ? ' · ' + m.c : ''}`) +
+    toast((st.edit?.id ? 'Modifiche salvate' : `Aggiunto: ${eur.format(net(m))}${m.c ? ' · ' + m.c : ''}`) +
       avvisi.map(x => ` — Attenzione: ${x.c} al ${Math.round(x.pct * 100)}% del budget (soglia ${x.soglia}%)`).join(''), avvisi.length ? 6000 : 2600);
     if (ym !== st.ym) st.ym = ym;
     setEdit(null); render(); $('importo').focus();
@@ -1534,6 +1564,102 @@ $('rvForm').addEventListener('submit', ev => {
   st.rvSugg = sug.join('<br>'); st.rvSuggT = rev.trimestre; renderRevisione();
 });
 
+// 4.4 Recurring templates. The tool only PROPOSES (home notice, "Da confermare" in the Registro): nothing is written until the user confirms.
+// Templates live in cfg.ricorrenti and skipped occurrences in cfg.ricorrentiSaltate, both written whole through scriviCfg; a confirmed one is a normal movement with rc.
+// shortcut: ricorrentiSaltate only grows (one short key per skipped occurrence); prune it if it ever gets long.
+const RC_TIPI = {spesa: 'Spesa', entrata: 'Entrata', giroconto: 'Giroconto'};
+function renderRicorrenti() {
+  const oggi = todayISO(), r = ready() ? ricorrentiDovute(st.cfg, st.mesi, oggi) : {proposte: [], vecchie: 0}, n = r.proposte.length;
+  st.rcProp = Object.fromEntries(r.proposte.map(p => [p.chiave, p]));
+  $('rcBox').hidden = !n; $('rcAvviso').hidden = !n;
+  $('rcAvviso').textContent = n ? `${n} ${n === 1 ? 'movimento ricorrente da confermare' : 'movimenti ricorrenti da confermare'}: apri il Registro` : '';
+  $('rcConta').textContent = n ? String(n) : '';
+  $('rcLista').innerHTML = r.proposte.map(p => `<div class="riga"><span class="nome">${dataIt(p.data).slice(0, 5)} · ${esc(p.nome)}${p.data < oggi ? ' <small class="stato">scaduta</small>' : ''}</span><span class="res">${eur.format(p.importo)}</span>
+    <span class="det">${RC_TIPI[p.tipo]} · ${esc(p.conto)}${p.tipo === 'giroconto' ? ' → ' + esc(p.aConto) : ' · ' + esc(p.categoria)}</span>
+    ${p.avviso ? `<span class="det stato err">${esc(p.avviso)}. Usa Modifica per sceglierne un altro.</span>` : ''}
+    <span class="azioni"><button class="btn pri" type="button" data-rc="conferma" data-k="${esc(p.chiave)}"${p.avviso ? ' disabled' : ''}>Conferma</button><button class="btn" type="button" data-rc="modifica" data-k="${esc(p.chiave)}">Modifica</button><button class="btn" type="button" data-rc="salta" data-k="${esc(p.chiave)}">Salta</button></span></div>`).join('')
+    + (r.vecchie ? `<p class="stato">${r.vecchie} ${r.vecchie === 1 ? 'occorrenza più vecchia non è mostrata' : 'occorrenze più vecchie non sono mostrate'}: compaiono quando confermi o salti queste.</p>` : '');
+  renderRcCfg();
+}
+// Opens the movement form filled with the proposal (Modifica); saving it writes a normal movement carrying the proposal's rc.
+function apriRicorrente(p) {
+  const m = movimentoRicorrente(st.cfg, p).m;
+  setEdit({...m, id: undefined, q: undefined}); // no id: the form treats it as a new movement
+  $('formTitolo').textContent = 'Conferma: ' + p.nome; $('salva').textContent = 'Conferma e salva'; $('elimina').hidden = true;
+  render(); $('boxForm').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+function confermaRicorrente(p) {
+  const {m, err} = movimentoRicorrente(st.cfg, p), ym = m.d.slice(0, 7), id = 'rc-' + p.chiave;
+  const apri = msg => { apriRicorrente(p); toast(msg, 5000); }; // same checks as the form; when one fails the form opens to fix it
+  if (err) return apri(err);
+  if (p.tipo === 'entrata' && chiedeDest(p.categoria)) return apri("Questa entrata va assegnata: scegli la destinazione");
+  if (usoFondoSenzaNota(st.cfg, m)) return apri('Ogni uso del fondo emergenze richiede una nota: scrivi il motivo');
+  const manca = ammanco(st.mesi, st.cfg, {...m, id});
+  if (manca > 0) return apri(`Il salvadanaio ${m.c} non basta: mancano ${eur.format(manca)}`);
+  const dopo = {...st.mesi, [ym]: {...st.mesi[ym], [id]: m}};
+  const avvisi = p.tipo === 'spesa' ? soglieSuperate(st.mesi, dopo, st.cfg, ym).filter(x => x.c === m.c) : [];
+  scrivi(ym, id, m);
+  toast(`Registrato: ${eur.format(net(m))} · ${p.nome}` + avvisi.map(x => ` — Attenzione: ${x.c} al ${Math.round(x.pct * 100)}% del budget (soglia ${x.soglia}%)`).join(''), avvisi.length ? 6000 : 2600);
+  render();
+}
+$('rcLista').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-rc]'), p = b && st.rcProp?.[b.dataset.k]; if (!p || !ready()) return;
+  if (b.dataset.rc === 'conferma') confermaRicorrente(p);
+  else if (b.dataset.rc === 'modifica') apriRicorrente(p);
+  else if (scriviCfg({ricorrentiSaltate: [...(st.cfg.ricorrentiSaltate || []), p.chiave]})) toast('Saltata: ' + p.nome);
+});
+
+// Management in Configurazione (list, add, edit, pause = a "fino" date, delete).
+let rcEdit = null; // id of the template in the form, or null for a new one
+const rcCadenza = r => r.cadenza === 'annuale' ? `ogni anno il ${r.giorno}/${r.da.slice(5, 7)}` : `${r.cadenza === 'mesi' ? 'ogni ' + r.ogni + ' mesi' : 'ogni mese'}, giorno ${r.giorno}`;
+function rcAggiorna(cur = {}) { // options and fields that depend on type and cadence; keeps what is chosen, and the template's own closed account or archived category
+  const t = $('rcTipo').value, conti = contiAttivi(st.cfg).map(c => c.nome);
+  const cat = (t === 'entrata' ? categorieEntrata(st.cfg).map(c => c.nome) : [...categorieAttive(st.cfg).map(c => c.nome), ...svLista().map(v => v.nome)]).sort((a, b) => a.localeCompare(b, 'it'));
+  const fill = (id, nomi, tieni) => {
+    const v = $(id).value || tieni || '';
+    $(id).innerHTML = '<option value="">Scegli…</option>' + [...new Set([...nomi, tieni].filter(Boolean))].map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join('');
+    $(id).value = v; if ($(id).selectedIndex < 0) $(id).selectedIndex = 0;
+  };
+  fill('rcCat', cat, cur.categoria); fill('rcConto', conti, cur.conto); fill('rcContoA', conti, cur.aConto);
+  $('rcCatL').hidden = t === 'giroconto'; $('rcContoAL').hidden = t !== 'giroconto'; $('rcOgniL').hidden = $('rcCad').value !== 'mesi';
+}
+function renderRcCfg() {
+  if ($('pagConfig').hidden || !ready()) return;
+  const lista = st.cfg.ricorrenti || [], oggi = todayISO();
+  $('rcElenco').innerHTML = lista.length ? lista.map((r, i) => `<span>${esc(r.nome)}<br><small class="stato">${RC_TIPI[r.tipo] || '?'} ${eur.format(r.importo)} · ${rcCadenza(r)}${r.fino ? (r.fino < oggi ? ' · finita il ' : ' · fino al ') + dataIt(r.fino) : ''}</small></span>
+    <span class="azioni"><button class="btn" type="button" data-rcmod="${i}">Modifica</button><button class="btn" type="button" data-rcpausa="${i}">${r.fino ? 'Riprendi' : 'Pausa'}</button></span>
+    <button class="btn peric" type="button" data-rcdel="${i}" aria-label="Elimina ${esc(r.nome)}">×</button>`).join('') : '<p class="vuoto">Nessun modello. Aggiungine uno dal modulo.</p>';
+  rcAggiorna(lista.find(r => r.id === rcEdit));
+}
+$('rcForm').addEventListener('change', ev => { if (ev.target.id === 'rcTipo' || ev.target.id === 'rcCad') rcAggiorna(); });
+const rcReset = () => { rcEdit = null; $('rcForm').reset(); pulisciErr($('rcForm')); $('rcDa').value = todayISO(); $('rcSalva').textContent = 'Aggiungi'; $('rcAnnulla').hidden = true; rcAggiorna(); };
+$('rcAnnulla').addEventListener('click', rcReset); $('rcDa').value = todayISO();
+$('rcElenco').addEventListener('click', ev => {
+  const b = ev.target.closest('button'); if (!b) return;
+  const lista = st.cfg.ricorrenti || [], i = +(b.dataset.rcmod ?? b.dataset.rcpausa ?? b.dataset.rcdel), r = lista[i]; if (!r) return;
+  if (b.dataset.rcmod != null) {
+    rcEdit = r.id; $('rcTipo').value = r.tipo; $('rcNome').value = r.nome; $('rcImporto').value = num(r.importo); $('rcCad').value = r.cadenza; $('rcOgni').value = r.ogni || '';
+    $('rcGiorno').value = r.giorno; $('rcDa').value = r.da; $('rcFino').value = r.fino || ''; $('rcEti').value = (r.etichette || []).join(', '); $('rcNota').value = r.nota || '';
+    pulisciErr($('rcForm')); rcAggiorna(r); $('rcCat').value = r.categoria || ''; $('rcConto').value = r.conto; $('rcContoA').value = r.aConto || '';
+    $('rcSalva').textContent = 'Salva modello'; $('rcAnnulla').hidden = false; $('rcNome').focus();
+  } else if (b.dataset.rcpausa != null) {
+    const {fino, ...resto} = r, oggi = todayISO();
+    if (!fino && oggi < r.da) { toast('Il modello non è ancora iniziato: cambia «Dal» o eliminalo', 4000); return; }
+    if (scriviCfg({ricorrenti: lista.map((x, j) => j === i ? (fino ? resto : {...r, fino: oggi}) : x)})) toast(fino ? 'Ripreso: ' + r.nome : 'In pausa da oggi: ' + r.nome);
+  } else if (confirm(`Elimina il modello "${r.nome}"? I movimenti già confermati restano.`)) { if (scriviCfg({ricorrenti: lista.filter((_, j) => j !== i)}) && rcEdit === r.id) rcReset(); }
+});
+$('rcForm').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const imp = leggi($('rcImporto')); if (imp === null) return;
+  const t = $('rcTipo').value, lista = st.cfg.ricorrenti || [];
+  const r = {id: rcEdit || 'r' + Date.now().toString(36), nome: $('rcNome').value.trim(), tipo: t, importo: imp, categoria: t === 'giroconto' ? '' : $('rcCat').value, conto: $('rcConto').value,
+    aConto: t === 'giroconto' ? $('rcContoA').value : '', giorno: +$('rcGiorno').value, cadenza: $('rcCad').value, da: $('rcDa').value, etichette: parseEtichette($('rcEti').value), nota: $('rcNota').value.trim()};
+  if (r.cadenza === 'mesi') r.ogni = +$('rcOgni').value; // Firestore refuses undefined: optional fields are left out
+  if ($('rcFino').value) r.fino = $('rcFino').value;
+  const err = validaRicorrente(r); if (err.length) { toast(err[0], 4000); return; }
+  if (scriviCfg({ricorrenti: lista.some(x => x.id === r.id) ? lista.map(x => x.id === r.id ? r : x) : [...lista, r]})) { toast('Modello salvato: ' + r.nome); rcReset(); }
+});
+
 // Side menu: the page is the URL hash, so the phone back button works
 $('menuApri').addEventListener('click', () => $('menu').showModal());
 $('menu').addEventListener('click', ev => { if (ev.target === $('menu') || ev.target.closest('a,#menuChiudi')) $('menu').close(); });
@@ -1552,7 +1678,7 @@ function pagina() {
   if (p === '#tcg') renderTcg();
   if (p === '#proiezione') renderProiezione();
   if (p === '#revisione') renderRevisione();
-  if (p === '#config') renderAzzera();
+  if (p === '#config') { renderAzzera(); renderRcCfg(); }
   for (const a of $('menu').querySelectorAll('a')) a.hash === p ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
 }
 addEventListener('hashchange', pagina); pagina();
