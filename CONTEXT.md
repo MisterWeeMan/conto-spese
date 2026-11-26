@@ -24,13 +24,13 @@ Termini dello strumento, in italiano. Gli stessi nomi vanno usati nel codice e n
 - **Saldo iniziale**: saldo di partenza a una data.
 - **Fondo emergenze**: obiettivo fisso, su Trade Republic. Conta nel patrimonio, non nello spendibile. Ogni uso richiede una nota.
 - **Fondo TCG**: salvadanaio alimentato solo dalle entrate con etichetta TCG o nella categoria Vendita carte.
-- **Revisione dei conti**: controllo programmato (fine marzo 2027, poi ogni 6 mesi) con numeri veri. Registra cosa ho deciso.
+- **Revisione dei conti**: controllo programmato (fine marzo 2027, poi ogni 3 mesi: fine giugno, fine settembre, fine dicembre) con numeri veri. Registra cosa ho deciso.
 - **Obiettivo di quota**: aumento desiderato (per esempio investimenti e rata auto). Non è una regola automatica.
 
 ## Conti e movimenti
 
 - **Conto**: dove stanno i soldi davvero (Revolut, Joint, PayPal, contanti, buoni, Trade Republic). Saldi controllati ogni settimana, riconciliati ogni mese.
-- **Sottosaldo**: parte di un conto con uno scopo (solo in Trade Republic: fondo emergenze e investimenti).
+- **Conti Trade Republic**: due conti normali, "TradeRepublic Fondo" (fondo emergenze) e "TradeRepublic Investimenti" (investimenti livello 3-5 anni). Un trasferimento tra i due è un giroconto.
 - **Movimento**: una riga del registro. Ha sempre una nota libera.
 - **Giroconto**: spostamento tra conti, una riga sola, da → a. Fuori da ogni totale.
 - **Categoria di entrata**: categoria per le entrate (Stipendio, Tredicesima, Rimborsi, Vendita carte, Altro). Non ha budget né priorità di taglio. Un'entrata non riduce mai lo speso di una categoria di spesa.

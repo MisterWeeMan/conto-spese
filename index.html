@@ -121,7 +121,6 @@ details summary{cursor:pointer;font-weight:500}
 .pag{display:contents}
 .voce{display:grid;grid-template-columns:1fr 1fr;gap:8px;border:1px solid var(--line);border-radius:8px;padding:10px}.voce .tutta{grid-column:1/-1}
 .cn{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-top:1px solid var(--line)}.cn:first-of-type{border-top:0}
-.ss{margin:0 0 0 4px;padding-left:12px;border-left:2px solid var(--line);display:flex;flex-direction:column;gap:4px}.ss .nome{font-weight:400}.cn .ss .res{font-size:15px}
 .cn .res{font-size:20px}.cn.chiuso .nome{color:var(--muted)}.cn small.ok{color:var(--ok)}
 @media (min-width:900px){#pagConti .box{max-width:640px}}
 .due{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
@@ -408,7 +407,6 @@ details summary{cursor:pointer;font-weight:500}
         <p class="stato tutta" id="destNota" hidden></p>
         <label data-per="u e g vj cr rb" id="contoL"><span>Conto<b class="ob" aria-hidden="true">*</b></span><select id="conto"></select></label>
         <label data-per="g"><span>Conto di arrivo<b class="ob" aria-hidden="true">*</b></span><select id="contoA"></select></label>
-        <label class="tutta" data-per="u e g" id="ssL" hidden><span id="ssTit">Sottosaldo</span><select id="sottosaldo"></select></label>
         <label class="tutta" data-per="u" id="voceL" hidden>Voce del salvadanaio<select id="voce"></select></label>
         <label class="tutta" data-per="rb"><span>Credito che chiude<b class="ob" aria-hidden="true">*</b></span><select id="credito"></select></label>
         <label class="tutta" data-per="u">La mia parte, se divisa con altri (€)<input id="parte" inputmode="decimal" data-eur="zero" placeholder="Vuota = tutto mio"></label>
@@ -448,7 +446,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {chiusuraProposta, chiusuraCalcola, chiusuraStato, chiusuraMancante, saldoSalvadanaio, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota, saldi, differenzaControllo, ultimoControllo, storicoControlli, controlloScaduto, controlliInRitardo, sottosaldiConto, investimenti, patrimonio, patrimonioSerie, riepilogoGruppi, tassoRisparmio} = window.CSLogic;
+const {chiusuraProposta, chiusuraCalcola, chiusuraStato, chiusuraMancante, saldoSalvadanaio, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota, saldi, differenzaControllo, ultimoControllo, storicoControlli, controlloScaduto, controlliInRitardo, investimenti, patrimonio, patrimonioSerie, riepilogoGruppi, tassoRisparmio} = window.CSLogic;
 const {validaImporto, validaQuotaJoint} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 
@@ -584,21 +582,6 @@ function renderForm() {
   aggiorna();
 }
 
-// Sub-balance choice (3.2): shown when the account the money lands on (a transfer: the arrival one, else the departure one) has
-// sub-balances; empty = not assigned. The options are rebuilt only when they change, so a choice in progress is not lost.
-function renderSS(pref) {
-  const t = tipo(), sub = k => st.cfg.conti.find(c => c.nome === k)?.sottosaldi || [];
-  const arrivo = t === 'g' && sub($('contoA').value).length > 0;
-  const lista = t === 'g' ? (arrivo ? sub($('contoA').value) : sub($('conto').value)) : t === 'u' || t === 'e' ? sub($('conto').value) : [];
-  const tit = t === 'g' ? (arrivo ? 'Sottosaldo di arrivo' : 'Sottosaldo di partenza') : 'Sottosaldo';
-  const v = pref ?? $('sottosaldo').value, sig = tit + '|' + lista.map(x => x.nome).join('|');
-  $('ssL').hidden = !lista.length;
-  if ($('sottosaldo').dataset.sig !== sig) {
-    $('sottosaldo').dataset.sig = sig; $('ssTit').textContent = tit;
-    $('sottosaldo').innerHTML = '<option value="">Non assegnato</option>' + lista.map(x => `<option value="${esc(x.nome)}">${esc(x.nome)}</option>`).join('');
-  }
-  $('sottosaldo').value = lista.some(x => x.nome === v) ? v : '';
-}
 // show only the fields of the chosen type; Joint note and split field depend on the account
 const ALTRI = ['vj', 'cr', 'rb'];
 function aggiorna() {
@@ -611,7 +594,6 @@ function aggiorna() {
   for (const el of $('form').querySelectorAll('[data-per]')) el.hidden = !el.dataset.per.split(' ').includes(t);
   for (const b of $('form').querySelectorAll('.ob[data-ob]')) b.hidden = !b.dataset.ob.split(' ').includes(t);
   $('parte').parentElement.hidden = t !== 'u' || joint;
-  renderSS();
   renderVoce();
   suggerisci(t);
   $('jointNota').hidden = !joint;
@@ -647,14 +629,12 @@ function renderCfg() {
   $('contiLista').innerHTML = st.cfg.conti.length ? st.cfg.conti.map((c, i) => `<span>${esc(c.nome)}</span>
     <label class="chk"><input type="checkbox" data-conto="${i}" data-f="joint"${c.joint ? ' checked' : ''}>Joint</label>
     <label class="chk"><input type="checkbox" data-conto="${i}" data-f="chiuso"${c.chiuso ? ' checked' : ''}>Chiuso</label>`).join('') : '<p class="vuoto">Nessun conto: aggiungine uno per poter registrare.</p>';
-  const sig = JSON.stringify(st.cfg.conti.map(c => [c.nome, c.saldoIniziale, c.sottosaldi])); // rewritten only when stored values change, so a half-typed row is not wiped
+  const sig = JSON.stringify(st.cfg.conti.map(c => [c.nome, c.saldoIniziale])); // rewritten only when stored values change, so a half-typed row is not wiped
   if (sig !== st.siSig) {
     st.siSig = sig;
     $('siLista').innerHTML = st.cfg.conti.map((c, i) => `<div class="voce" data-conto="${i}"><b class="tutta">${esc(c.nome)}</b>
       <label>Dal<input type="date" class="sid" value="${esc(c.saldoIniziale?.data || '')}"></label>
-      <label>Saldo (€)<input class="sii" data-eur="neg" inputmode="text" placeholder="Es. 1200,50" value="${num(c.saldoIniziale?.importo)}"></label></div>` + (c.sottosaldi || []).map((x, n) => `<div class="voce" data-conto="${i}" data-ss="${n}"><b class="tutta">${esc(c.nome)} · sottosaldo ${esc(x.nome)}</b>
-      <label>Dal<input type="date" class="sid" value="${esc(x.saldoIniziale?.data || '')}"></label>
-      <label>Saldo (€)<input class="sii" data-eur="neg" inputmode="text" placeholder="Es. 1200,50" value="${num(x.saldoIniziale?.importo)}"></label></div>`).join('')).join('');
+      <label>Saldo (€)<input class="sii" data-eur="neg" inputmode="text" placeholder="Es. 1200,50" value="${num(c.saldoIniziale?.importo)}"></label></div>`).join('');
   }
   $('quoteLista').innerHTML = r.length ? r.map(q => `<span>dal ${q.da.split('-').reverse().join('/')}</span><b class="num">${esc(q.pct)}%</b>
     <button class="btn peric" type="button" data-da="${esc(q.da)}" aria-label="Togli la quota del ${esc(q.da)}">×</button>`).join('') : '<p class="vuoto">Nessuna quota: senza, le spese Joint non si possono registrare.</p>';
@@ -686,7 +666,6 @@ function setEdit(m) {
   renderVoce(m?.v || '');
   $('conto').value = m ? m.k || '' : ricorda('conto') || '';
   $('contoA').value = m?.a || ''; $('credito').value = m?.r || '';
-  renderSS(m?.ss || '');
   st.caricando = false;
   aggiorna();
 }
@@ -723,7 +702,6 @@ $('form').addEventListener('submit', async ev => {
   const m = {d: $('data').value, n: $('nota').value.trim(), e: entra ? imp : 0, u: entra ? 0 : imp, c, k, a, r, b, p: null, q: null,
     l: $('etichette').closest('[data-per]').hidden ? [] : parseEtichette($('etichette').value),
     v: t === 'u' && !$('voceL').hidden ? $('voce').value : '',
-    ss: $('ssL').hidden ? '' : $('sottosaldo').value, // sub-balance of the account (3.2), '' = not assigned; always written, as the other fields
     t: t === 'u' || t === 'e' ? '' : t, x: 0};
   if (t === 'u' && contoJoint(st.cfg, k)) {
     const jq = quotaMov(st.cfg, m, qFissa());
@@ -785,7 +763,7 @@ $('siLista').addEventListener('change', ev => {
   let imp = null;
   if (d && !vuoto) { imp = leggi(i); if (imp === null) return; } else if (d || !vuoto) return; else errCampo(i, ''); // one field only: wait for the other
   const metti = o => { const {saldoIniziale, ...resto} = o; return imp === null ? resto : {...resto, saldoIniziale: {data: d, importo: imp}}; };
-  scriviCfg({conti: st.cfg.conti.map((c, j) => j !== +riga.dataset.conto ? c : riga.dataset.ss === undefined ? metti(c) : {...c, sottosaldi: c.sottosaldi.map((x, n) => n === +riga.dataset.ss ? metti(x) : x)})});
+  scriviCfg({conti: st.cfg.conti.map((c, j) => j !== +riga.dataset.conto ? c : metti(c))});
 });
 $('contoForm').addEventListener('submit', ev => {
   ev.preventDefault();
@@ -816,7 +794,7 @@ function cfgImport(c) {
   const lista = (now, imp) => !imp ? now : imp.every(x => typeof x === 'object') ? imp : unisci(now, imp);
   // an account in the file keeps the opening balance set in the page when the file has none, so re-importing the config does not wipe it
   const tieni = (vecchio, x) => x.saldoIniziale ? x : {...x, ...(vecchio?.saldoIniziale && {saldoIniziale: vecchio.saldoIniziale})};
-  const conti = lista(cur.conti, c.conti).map(x => { const o = cur.conti.find(y => y.nome === x.nome), k = tieni(o, x); return x.sottosaldi ? {...k, sottosaldi: x.sottosaldi.map(s => tieni(o?.sottosaldi?.find(y => y.nome === s.nome), s))} : k; });
+  const conti = lista(cur.conti, c.conti).map(x => tieni(cur.conti.find(y => y.nome === x.nome), x));
   // the values of the investments typed in the page stay when the file has none
   const inv = resto.investimenti && {investimenti: {...(cur.investimenti?.valore && {valore: cur.investimenti.valore}), ...resto.investimenti}};
   return {...resto, ...inv, categorie: lista(cur.categorie, c.categorie), conti};
@@ -1134,15 +1112,7 @@ $('pagPermettermelo').addEventListener('input', renderPm);
 const dataIt = d => d.split('-').reverse().join('/');
 const sgn = n => (n > 0 ? '+' : '') + eur.format(n);
 function esitoControllo(c) { return c.diff === 0 || Math.abs(c.diff) < 0.005 ? 'a posto' : `differenza ${sgn(c.diff)}: probabile movimento mancante`; }
-// Sub-balances of an account (3.2) under its balance, with what is not assigned: the whole is the figure to compare with the bank app.
-function sottosaldiHtml(nome, oggi) {
-  const r = sottosaldiConto(st.mesi, st.cfg, nome, oggi);
-  if (!r) return '';
-  const riga = (n, v, cls = '') => `<div class="riga"><span class="nome">${n}</span><span class="res ${cls}">${eur.format(v)}</span></div>`;
-  return `<div class="ss" aria-label="Sottosaldi di ${esc(nome)}">${r.sottosaldi.map(x => riga(esc(x.nome), x.saldo)).join('')}${riga('Non assegnato', r.nonAssegnato)}
-    <span class="det stato">I sottosaldi più il non assegnato fanno il saldo del conto.</span></div>`;
-}
-// Investments box (3.2): paid in (sub-balance), value typed by hand, and the gain or loss between them.
+// Investments box (3.2, R6): paid in (net transfers into the investments account), value typed by hand, and the gain or loss between them.
 function renderInv(oggi) {
   const i = st.cfg.investimenti && investimenti(st.mesi, st.cfg, oggi);
   $('invBox').hidden = !i;
@@ -1178,7 +1148,6 @@ function renderConti() {
     const saldo = sal[c.nome] || 0, k = esc(c.nome);
     return `<div class="cn${c.chiuso ? ' chiuso' : ''}"><div class="riga"><span class="nome">${k}${c.chiuso ? '<span class="pill">chiuso</span>' : ''}${c.joint ? '<span class="pill">Joint</span>' : ''}</span><span class="res">${eur.format(saldo)}</span>
       <span class="det">${c.chiuso ? 'saldo storico' : c.joint ? 'saldo nello strumento: importi interi e versamenti della compagna, non la tua quota' : 'saldo nello strumento'}${c.saldoIniziale ? '' : ' · senza saldo iniziale: conta tutti i movimenti'}</span></div>
-      ${sottosaldiHtml(c.nome, oggi)}
       ${u || !c.chiuso ? `<span class="stato${vecchio ? ' err' : ''}">${u ? `Ultimo controllo ${dataIt(u.d)} · ${esitoControllo(u)}` : 'Mai controllato'}${vecchio ? ' · più di 7 giorni fa' : ''}</span>` : ''}
       ${c.chiuso ? '' : `<label>Saldo nell'app della banca (€)<input data-k="${k}" data-eur="neg" data-s="${saldo}" inputmode="text" placeholder="Es. 1234,50 o -20" value="${esc(bozza[c.nome] || '')}" aria-label="Saldo di ${k} nell'app della banca"></label><small class="stato cnDiff" aria-live="polite"></small>`}
       ${storico.length ? `<details><summary>Ultimi controlli</summary>${storico.map(x => `<div class="riga"><span class="nome">${dataIt(x.d)} · banca ${eur.format(x.banca)}</span><span class="res">${sgn(x.diff)}</span></div>`).join('')}</details>` : ''}</div>`;
@@ -1294,8 +1263,8 @@ function renderPatrimonio() {
   $('ptNota').textContent = p.crediti > 0 ? `Crediti aperti ${eur.format(p.crediti)}: soldi che altri ti devono, non sono nel patrimonio` : '';
   $('ptAvvisi').innerHTML = (p.senzaSaldo.length ? `<p class="stato err">Senza saldo iniziale: ${p.senzaSaldo.map(esc).join(', ')}. Il saldo conta solo i movimenti registrati, quindi il patrimonio è parziale (Configurazione, Saldo iniziale).</p>` : '')
     + (p.senzaQuota ? '<p class="stato err">Manca la quota del Joint in vigore: il Joint conta zero. Impostala in Configurazione.</p>' : '');
-  const det = c => c.tipo === 'investimenti' ? (inv?.valore != null ? `valore del ${dataIt(inv.data)}, versato ${eur.format(inv.versato)}` : `nessun valore inserito: conta il versato ${eur.format(inv?.versato || 0)}`)
-    : c.quota != null ? `saldo del conto ${eur.format(c.saldo)} · tua quota ${c.quota}%` : c.saldo !== c.importo ? `saldo ${eur.format(c.saldo)}, meno la parte investita (contata a valore)` : '';
+  const det = c => c.tipo === 'investimenti' ? (inv?.valore != null ? `valore del ${dataIt(inv.data)}, versato ${eur.format(inv.versato)}` : `nessun valore inserito: conta il saldo del conto, versato ${eur.format(inv?.versato || 0)}`)
+    : c.quota != null ? `saldo del conto ${eur.format(c.saldo)} · tua quota ${c.quota}%` : '';
   $('ptComp').innerHTML = p.componenti.map(c => `<div class="riga"><span class="nome">${esc(c.nome)}</span><span class="res">${eur.format(c.importo)}</span>${det(c) ? `<span class="det">${det(c)}</span>` : ''}</div>`).join('')
     + `<div class="riga totale"><span class="nome">Totale</span><span class="res">${eur.format(p.totale)}</span></div>
     <p class="stato">I salvadanai e il fondo emergenze sono già dentro i conti: non si sommano di nuovo. Un giroconto tra conti non cambia il totale.</p>`;

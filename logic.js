@@ -154,22 +154,12 @@
     (c.controlli || []).forEach(function (x) {
       if (!day.test(x.d || '') || !real(x.d) || conti.indexOf(x.k) < 0 || !num(x.banca) || !num(x.strumento) || !num(x.diff)) err.push('Check ' + x.d + ' ' + x.k + ' is not valid');
     });
-    var haSS = function (k, n) { return (c.conti || []).some(function (x) { return x.nome === k && (x.sottosaldi || []).some(function (s) { return s.nome === n; }); }); };
-    (c.conti || []).forEach(function (x) {
-      var seen = {};
-      (x.sottosaldi || []).forEach(function (s) {
-        var k = String(s.nome || '').toLowerCase();
-        if (!k || seen[k]) err.push('Sub-balance of ' + x.nome + ' without name or duplicated: ' + s.nome);
-        seen[k] = 1;
-        if (s.saldoIniziale && (!day.test(s.saldoIniziale.data || '') || !real(s.saldoIniziale.data) || !num(s.saldoIniziale.importo))) err.push('Opening balance of sub-balance ' + s.nome + ' is not valid');
-      });
-    });
     var inv = c.investimenti;
-    if (inv && !haSS(inv.conto, inv.sottosaldo)) err.push('investimenti: sub-balance ' + inv.sottosaldo + ' of ' + inv.conto + ' does not exist');
+    if (inv && conti.indexOf(inv.conto) < 0) err.push('investimenti: account ' + inv.conto + ' does not exist');
     (inv && inv.valore || []).forEach(function (v) { if (!day.test(v.d || '') || !real(v.d) || !num(v.importo) || v.importo < 0) err.push('investimenti: value ' + v.d + ' is not valid'); });
     if (c.risparmioMin != null && !(num(c.risparmioMin) && c.risparmioMin >= 0 && c.risparmioMin <= 100)) err.push('risparmioMin is not valid');
     var fe = c.fondoEmergenze;
-    if (fe && !haSS(fe.conto, fe.sottosaldo) && !(c.salvadanai || []).some(function (v) { return v.nome === fe.sottosaldo; })) err.push('fondoEmergenze: pot or sub-balance ' + fe.sottosaldo + ' does not exist');
+    if (fe && conti.indexOf(fe.conto) < 0) err.push('fondoEmergenze: account ' + fe.conto + ' does not exist');
     if (fe && fe.obiettivo != null && !(num(fe.obiettivo) && fe.obiettivo >= 0)) err.push('fondoEmergenze: goal is not valid');
     (c.quotaJoint || []).forEach(function (q) { if (!day.test(q.da || '') || !real(q.da) || !(q.pct > 0 && q.pct <= 100)) err.push('quotaJoint entry ' + q.da + ' is not valid'); });
     (c.soglie || []).forEach(function (s) { if (!(s > 0)) err.push('soglie value ' + s + ' is not valid'); });
@@ -265,54 +255,21 @@
     return (cfg.conti || []).filter(function (c) { return !c.chiuso && controlloScaduto(cfg, c.nome, oggi); }).map(function (c) { return c.nome; });
   }
 
-  // Sub-balances of an account (3.2, Trade Republic): cfg.conti[].sottosaldi = [{nome, saldoIniziale?: {data, importo}}]. A row with ss
-  // = name moves that sub-balance: a transfer into an account that has it counts + on the arrival side, else - on the departure side;
-  // any other row moves it by e - u. Rows with no ss, or a name the account does not have, stay "not assigned".
-  // shortcut: no transfer between two sub-balances of the same account (one ss per row); add a second field if it is needed.
-  function latoSS(cfg, m) {
-    var has = function (k) { return (cfg.conti || []).some(function (c) { return c.nome === k && (c.sottosaldi || []).some(function (s) { return s.nome === m.ss; }); }); };
-    if (!m.ss) return null;
-    if (m.t === 'g') return has(m.a) ? {k: m.a, d: m.u || 0} : has(m.k) ? {k: m.k, d: -(m.u || 0)} : null;
-    return has(m.k) ? {k: m.k, d: net(m)} : null;
-  }
-  // Balance of sub-balance nome of account conto: its opening balance + the rows of ss = nome dated from the later of its opening date
-  // and the account's (earlier rows are inside them), up to finoA (optional). 0 when the account or sub-balance is missing.
-  function sottosaldo(mesi, cfg, conto, nome, finoA) {
-    var c = (cfg.conti || []).find(function (x) { return x.nome === conto; }), s = c && (c.sottosaldi || []).find(function (x) { return x.nome === nome; });
-    if (!s) return 0;
-    var da = [s.saldoIniziale && s.saldoIniziale.data, c.saldoIniziale && c.saldoIniziale.data].filter(Boolean).sort().pop() || '0000-01-01', tot = s.saldoIniziale ? s.saldoIniziale.importo : 0;
-    Object.keys(mesi).forEach(function (ym) {
-      movs(mesi, ym).forEach(function (m) {
-        var l = m.ss === nome && m.d >= da && !(finoA && m.d > finoA) && latoSS(cfg, m);
-        if (l && l.k === conto) tot += l.d;
-      });
-    });
-    return Math.round(tot * 100) / 100;
-  }
-  // The whole account (saldi(): the figure to compare with the bank app), its sub-balances and what is not assigned to any of them
-  // (balance - sum of the sub-balances, which can be negative); null when the account has no sub-balances.
-  function sottosaldiConto(mesi, cfg, conto, finoA) {
-    var c = (cfg.conti || []).find(function (x) { return x.nome === conto; });
-    if (!c || !(c.sottosaldi || []).length) return null;
-    var saldo = saldi(mesi, cfg, finoA)[conto] || 0, ss = c.sottosaldi.map(function (s) { return {nome: s.nome, saldo: sottosaldo(mesi, cfg, conto, s.nome, finoA)}; });
-    var somma = ss.reduce(function (t, s) { return t + s.saldo; }, 0);
-    return {saldo: saldo, sottosaldi: ss, nonAssegnato: Math.round((saldo - somma) * 100) / 100};
-  }
-  // Investments (B8) = cfg.investimenti {conto, sottosaldo, valore: [{d, importo}]}: versato = balance of the sub-balance (opening + net money
-  // put in); valore = the latest manual value dated up to finoA (default: no limit) with its date; diff = valore - versato, the gain or loss.
-  // valore, data and diff are null until a value is typed. null when there is no config or the sub-balance does not exist.
+  // Investments (B8, R6) = cfg.investimenti {conto, valore: [{d, importo}]}: conto is an ordinary account (Trade Republic Investimenti).
+  // versato = its opening balance + the transfers into it, minus the ones out of it, dated from its opening date up to finoA (optional):
+  // money put in, so a fee or interest on the account is not "versato". valore = the latest manual value dated up to finoA with its date;
+  // diff = valore - versato, the gain or loss. valore, data and diff are null until a value is typed. null when there is no config or the account does not exist.
   function investimenti(mesi, cfg, finoA) {
     var i = cfg.investimenti, c = i && (cfg.conti || []).find(function (x) { return x.nome === i.conto; });
-    if (!c || !(c.sottosaldi || []).some(function (s) { return s.nome === i.sottosaldo; })) return null;
-    var versato = sottosaldo(mesi, cfg, i.conto, i.sottosaldo, finoA);
+    if (!c) return null;
+    var versato = c.saldoIniziale ? c.saldoIniziale.importo : 0;
+    Object.keys(mesi).forEach(function (ym) { movs(mesi, ym).forEach(function (m) { if (!(finoA && m.d > finoA) && !(c.saldoIniziale && m.d < c.saldoIniziale.data)) versato += versamento(m, i.conto); }); });
+    versato = Math.round(versato * 100) / 100;
     var v = (i.valore || []).filter(function (x) { return !finoA || x.d <= finoA; }).sort(function (a, b) { return a.d < b.d ? -1 : a.d > b.d ? 1 : 0; }).pop();
     return {versato: versato, valore: v ? v.importo : null, data: v ? v.d : null, diff: v ? Math.round((v.importo - versato) * 100) / 100 : null};
   }
-  // The investments part of the net worth (3.4): the value, never the paid in. shortcut: until a first value is typed it falls back to the paid in; 0 without investments.
-  function valoreInvestimenti(mesi, cfg, finoA) {
-    var i = investimenti(mesi, cfg, finoA);
-    return !i ? 0 : i.valore != null ? i.valore : i.versato;
-  }
+  // What the row m moves into account conto as money put in: a transfer into it +u, out of it -u, anything else 0.
+  function versamento(m, conto) { return m.t !== 'g' ? 0 : m.a === conto ? m.u || 0 : m.k === conto ? -(m.u || 0) : 0; }
 
   // Month figures with MONTHLY budgets, no carry-over (spec rules 2-4). cfg.categorie = [{nome, gruppo, budget, archiviata}];
   // the budget of a Joint category is already my share, and mia() already reads p. righe: categories with budget and
@@ -451,7 +408,7 @@
   // (its residual); '' = not covered. The emergency fund is never a source nor a destination (use a transfer for it).
   // shortcut: an overspend is covered by one source only: if short, the rest stays "scoperto" and is reported.
   function chiusuraBase(mesi, cfg, ym) {
-    var r2 = function (x) { return Math.round(x * 100) / 100; }, ex = cfg.extra || {}, fe = (cfg.fondoEmergenze || {}).sottosaldo || ex.emergenze || 'Fondo emergenze';
+    var r2 = function (x) { return Math.round(x * 100) / 100; }, ex = cfg.extra || {}, fe = ex.emergenze || 'Fondo emergenze'; // a pot of that name (if any) is never a source nor a destination
     var sc = Object.assign({}, cfg.chiusure), pots = {}, taglio = {}, busta = {};
     delete sc[ym]; // the closing being made or redone does not count in its own balances
     (cfg.salvadanai || []).forEach(function (v) { if (v.nome !== fe) pots[v.nome] = Math.max(0, saldoMinimoDa(mesi, v, ym, sc)); });
@@ -527,13 +484,14 @@
     var pots = cfg.salvadanai || [], ym = m.d.slice(0, 7);
     var ha = function (n) { return pots.some(function (v) { return v.nome === n; }); };
     var fe = cfg.fondoEmergenze || {}; // the fund goal set in 2.7 wins over the pot's own obiettivo
-    var manca = function (v) { var o = v.nome === fe.sottosaldo && fe.obiettivo > 0 ? fe.obiettivo : v.obiettivo; var f = v.nome === fe.sottosaldo && fondoEmergenze(mesi, cfg, ym); return o > 0 ? o - (f ? f.saldo : saldoSalvadanaio(mesi, v, ym, cfg.chiusure)) : 0; }; // the fund balance may come from its sub-balance (3.2)
+    // shortcut: the fund is an account (R6); this step applies only if a pot named cfg.extra.emergenze exists, whose goal and balance are then the fund's.
+    var manca = function (v) { var o = v.nome === x.emergenze && fe.obiettivo > 0 ? fe.obiettivo : v.obiettivo; var f = v.nome === x.emergenze && fondoEmergenze(mesi, cfg, ym); return o > 0 ? o - (f ? f.saldo : saldoSalvadanaio(mesi, v, ym, cfg.chiusure)) : 0; };
     if (((m.l || []).some(function (l) { return String(l).toLowerCase() === 'tcg'; }) || (m.c && m.c === x.carte)) && ha(x.tcg)) {
       var neg = -saldoSalvadanaio(mesi, pots.find(function (v) { return v.nome === x.tcg; }), ym, cfg.chiusure);
       return {b: x.tcg, motivo: 'Vendita di carte: va al fondo TCG' + (neg > 0.005 ? '; al fondo mancano ' + neg.toFixed(2).replace('.', ',') + ' € per tornare a zero' : '')};
     }
     if (m.e < x.soglia) return {b: x.cuscinetto, motivo: 'Sotto ' + x.soglia + ' €: nel cuscinetto'};
-    var em = pots.find(function (v) { return v.nome === (fe.sottosaldo || x.emergenze); });
+    var em = pots.find(function (v) { return v.nome === x.emergenze; });
     if (em && manca(em) > 0.005) return {b: em.nome, motivo: 'Il fondo emergenze è sotto il suo obiettivo'};
     var corto = pots.filter(function (v) { return (!em || v.nome !== em.nome) && manca(v) > 0.005; })
       .sort(function (a, b) { return manca(b) - manca(a); })[0];
@@ -542,33 +500,29 @@
     return {b: x.cuscinetto, motivo: 'Nessun altro posto: nel cuscinetto'};
   }
 
-  // Emergency fund (spec rule 15, B7) at the end of month ym. cfg.fondoEmergenze = {conto, sottosaldo, obiettivo}: sottosaldo is the
-  // name of the pot that holds the fund (its balance comes from saldoSalvadanaio: opening balance + movements with c = name +
-  // extra income assigned to it), so it stays out of the spendibile like every pot. necessarie = monthly budgets of the
-  // Necessarie categories + quotas of the Necessarie pots, the fund itself excluded (as the plan counts them). mesi = saldo /
-  // necessarie (2 decimals, 0 without necessarie); seiMesi = 6 x necessarie, the check of the January/July reminder; sotto = balance
-  // under the goal (a use must be put back first). null when the config or the pot is missing.
+  // Emergency fund (spec rule 15, B7) at the end of month ym. cfg.fondoEmergenze = {conto, obiettivo}: conto is the ordinary account
+  // that holds the fund (R6, Trade Republic Fondo); the balance is that account's balance (saldi) at the end of the month. necessarie =
+  // monthly budgets of the Necessarie categories + quotas of the Necessarie pots (as the plan counts them). mesi = saldo / necessarie
+  // (2 decimals, 0 without necessarie); seiMesi = 6 x necessarie, the check of the January/July reminder; sotto = balance under the
+  // goal (a use must be put back first). null when the config or the account is missing.
   // shortcut: the goal is a fixed number, not tied to seiMesi; the check is only shown in January and July (no push notification).
   function fondoEmergenze(mesi, cfg, ym) {
     var fe = cfg.fondoEmergenze, r2 = function (x) { return Math.round(x * 100) / 100; };
-    var ss = fe && (cfg.conti || []).some(function (c) { return c.nome === fe.conto && (c.sottosaldi || []).some(function (s) { return s.nome === fe.sottosaldo; }); });
-    var sv = fe && (cfg.salvadanai || []).find(function (v) { return v.nome === fe.sottosaldo; });
-    if (!sv && !ss) return null;
+    if (!fe || !(cfg.conti || []).some(function (c) { return c.nome === fe.conto; })) return null;
     var nec = 0;
     (cfg.categorie || []).forEach(function (c) { if (!c.archiviata && c.gruppo === 'Necessarie' && c.budget > 0) nec += c.budget; });
-    (cfg.salvadanai || []).forEach(function (v) { if (fe.sottosaldo !== v.nome && v.gruppo === 'Necessarie') nec += quotaSalvadanaio(v, ym); });
+    (cfg.salvadanai || []).forEach(function (v) { if (v.gruppo === 'Necessarie') nec += quotaSalvadanaio(v, ym); });
     nec = r2(nec);
-    var saldo = ss ? sottosaldo(mesi, cfg, fe.conto, fe.sottosaldo, ym + '-31') : saldoSalvadanaio(mesi, sv, ym, cfg.chiusure), ob = fe.obiettivo || 0;
+    var saldo = saldi(mesi, cfg, ym + '-31')[fe.conto] || 0, ob = fe.obiettivo || 0;
     return {saldo: saldo, obiettivo: ob, necessarie: nec, mesi: nec > 0 ? r2(saldo / nec) : 0, seiMesi: r2(6 * nec),
       manca: r2(Math.max(0, ob - saldo)), sotto: saldo < ob, promemoria: ym.slice(5) === '01' || ym.slice(5) === '07'};
   }
 
-  // True when m is a plain expense from the emergency fund (pot or sub-balance) or a transfer out of its sub-balance, without a note (every use needs one, spec rule 15).
+  // True when m is an expense from the emergency fund account or a transfer out of it, without a note (every use needs one, spec rule 15).
   function usoFondoSenzaNota(cfg, m) {
     var fe = cfg.fondoEmergenze;
     if (!fe || !(m.u > 0) || String(m.n || '').trim()) return false;
-    var l = m.ss === fe.sottosaldo && (!m.t || m.t === 'g') && latoSS(cfg, m); // charged to the fund sub-balance, or a transfer out of it
-    return (!m.t && m.c === fe.sottosaldo) || (!!l && l.k === fe.conto && l.d < 0);
+    return m.k === fe.conto && (!m.t || m.t === 'g');
   }
 
   // What a new or edited expense m cannot take from its pot: the deepest shortfall of the balance from m's month to the
@@ -674,26 +628,25 @@
 
   // Net worth (spec rule 11) as of finoA (optional 'YYYY-MM-DD'): the balance of every account (closed ones keep what they hold),
   // the Joint at my share in force on that date (saldi() holds the whole account, partner top-ups included: only my share counts),
-  // the investments at value in place of the paid in (the account line loses the paid in, so the sub-balance is never counted twice;
-  // the emergency fund stays in its account line, pots are already inside their accounts).
-  // → {totale, componenti: [{nome, tipo: 'conto'|'investimenti', importo, saldo?, quota?}], crediti, parziale, senzaSaldo, senzaQuota}.
+  // the investments account at its latest typed value in place of its balance (R6: one line, so it is never counted twice; its balance
+  // until a first value is typed; the emergency fund is an ordinary account line, pots are already inside their accounts).
+  // → {totale, componenti: [{nome, tipo: 'conto'|'investimenti', importo, saldo, quota?}], crediti, parziale, senzaSaldo, senzaQuota}.
   // crediti = open credits at that date, shown apart and NOT in the total. parziale = an account is missing its opening balance (open
   // accounts only) or was not yet opened at finoA, so the figure is incomplete. senzaQuota = a Joint account with no share in force (counts 0).
   // shortcut: the Joint line is balance x share, so a top-up by the partner counts at my share; a precise split of who put what needs
   // per-person deposits. An account not yet opened at finoA is left out, not estimated.
   function patrimonio(mesi, cfg, finoA) {
     var r2 = function (x) { return Math.round(x * 100) / 100; }, sal = saldi(mesi, cfg, finoA), pct = quotaJoint(cfg, finoA || '9999-12-31');
-    var inv = investimenti(mesi, cfg, finoA), comp = [], senzaSaldo = [], parziale = false, senzaQuota = false, invOk = false;
+    var inv = investimenti(mesi, cfg, finoA), comp = [], senzaSaldo = [], parziale = false, senzaQuota = false;
     (cfg.conti || []).forEach(function (c) {
       var si = c.saldoIniziale;
       if (si && finoA && si.data > finoA) { parziale = true; return; }
       if (!si && !c.chiuso) { senzaSaldo.push(c.nome); parziale = true; }
       var saldo = sal[c.nome] || 0, importo = saldo, riga = {nome: c.nome, tipo: 'conto', saldo: saldo};
-      if (inv && c.nome === cfg.investimenti.conto) { importo = r2(saldo - inv.versato); invOk = true; }
+      if (inv && c.nome === cfg.investimenti.conto) { riga.tipo = 'investimenti'; if (inv.valore != null) importo = inv.valore; }
       if (c.joint) { riga.quota = pct; if (pct == null) senzaQuota = true; importo = pct == null ? 0 : r2(importo * pct / 100); }
       riga.importo = importo; comp.push(riga);
     });
-    if (invOk) comp.push({nome: 'Investimenti', tipo: 'investimenti', importo: valoreInvestimenti(mesi, cfg, finoA)});
     var crediti = creditiAperti(mesi).filter(function (x) { return !finoA || x.d <= finoA; }).reduce(function (t, x) { return t + x.residuo; }, 0);
     return {totale: r2(comp.reduce(function (t, x) { return t + x.importo; }, 0)), componenti: comp, crediti: r2(crediti), parziale: parziale, senzaSaldo: senzaSaldo, senzaQuota: senzaQuota};
   }
@@ -739,15 +692,15 @@
   }
 
   // Savings rate of month ym (spec rule 14, B12): (PAC + buffer + couple trips) / salary. PAC = money put into the investments
-  // sub-balance in the month (transfers with ss, never below 0); buffer and couple trips = what goes into those pots in the month:
+  // account in the month (transfers into it minus transfers out, never below 0); buffer and couple trips = what goes into those pots in the month:
   // their row in the month's plan (the quota without a plan) plus the surplus the month closing put in them. Pots for planned expenses
   // do not count; a surplus left on the account ('' in the closing) does not either. Names: cfg.extra.cuscinetto ('Cuscinetto') and
   // cfg.extra.viaggi ('Viaggi di coppia'). minimo = cfg.risparmioMin in percent (default 10).
   // → {stipendio, pac, cuscinetto, viaggi, risparmio, tasso (null without a salary), minimo, sopra}.
-  // shortcut: a PAC registered as an expense in a category (the sheet's way) does not count: register it as a transfer with ss.
+  // shortcut: a PAC registered as an expense in a category (the sheet's way) does not count: register it as a transfer to the investments account.
   function tassoRisparmio(mesi, cfg, ym) {
     var r2 = function (x) { return Math.round(x * 100) / 100; }, s = statoMese(mesi, cfg, ym), ex = cfg.extra || {}, inv = cfg.investimenti, pac = 0;
-    movs(mesi, ym).forEach(function (m) { var l = inv && m.ss === inv.sottosaldo && latoSS(cfg, m); if (l && l.k === inv.conto) pac += l.d; });
+    movs(mesi, ym).forEach(function (m) { if (inv) pac += versamento(m, inv.conto); });
     var chius = ((cfg.chiusure || {})[ym] || {}).righe || [];
     var pot = function (nome) {
       var riga = s.piano.righe.filter(function (r) { return r.tipo === 'salvadanaio' && r.nome === nome; })[0], tot = riga ? riga.importo : 0;
@@ -759,7 +712,7 @@
     return {stipendio: s.stipendio, pac: p, cuscinetto: cus, viaggi: via, risparmio: tot, tasso: s.stipendio > 0 ? tot / s.stipendio : null, minimo: minimo, sopra: s.stipendio > 0 && tot * 100 >= minimo * s.stipendio};
   }
 
-  var api = {sostituisci2026: sostituisci2026, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, sottosaldo: sottosaldo, sottosaldiConto: sottosaldiConto, investimenti: investimenti, valoreInvestimenti: valoreInvestimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {sostituisci2026: sostituisci2026, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

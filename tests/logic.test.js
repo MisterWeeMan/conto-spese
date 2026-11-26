@@ -611,12 +611,12 @@ test('destinazioneExtra: threshold and names can be set in cfg.extra', () => {
 const cfgFE = {
   categorie: [{nome: 'Affitto', gruppo: 'Necessarie', budget: 500}, {nome: 'Spesa', gruppo: 'Necessarie', budget: 200}, {nome: 'Svago', gruppo: 'Non necessarie', budget: 100}],
   salvadanai: [
-    {nome: 'Fondo emergenze', gruppo: 'Risparmi', conto: 'TR', saldoIniziale: {data: '2027-01-01', importo: 3000}, quota: 0},
     {nome: 'Auto', gruppo: 'Necessarie', conto: 'Rev', saldoIniziale: {data: '2027-01-01', importo: 0}, quota: 100},
   ],
-  fondoEmergenze: {conto: 'TR', sottosaldo: 'Fondo emergenze', obiettivo: 6000},
+  conti: [{nome: 'Rev'}, {nome: 'TR', saldoIniziale: {data: '2027-01-01', importo: 3000}}], // R6: the fund is the balance of its own account
+  fondoEmergenze: {conto: 'TR', obiettivo: 6000},
 };
-test('fondoEmergenze: months covered = balance / monthly necessarie (budgets + pot quotas of that group, not the fund itself)', () => {
+test('fondoEmergenze: months covered = balance / monthly necessarie (budgets + pot quotas of that group)', () => {
   const f = L.fondoEmergenze({}, cfgFE, '2027-02'); // necessarie = 500 + 200 + 100 = 800
   assert.strictEqual(f.saldo, 3000);
   assert.strictEqual(f.necessarie, 800);
@@ -626,34 +626,38 @@ test('fondoEmergenze: months covered = balance / monthly necessarie (budgets + p
   assert.strictEqual(f.sotto, true);
 });
 test('fondoEmergenze: a withdrawal lowers the balance, a full fund is not below goal, null without config', () => {
-  const mesi = {'2027-02': {a: {d: '2027-02-10', u: 500, c: 'Fondo emergenze', n: 'Dentista'}}};
+  const mesi = {'2027-02': {a: {d: '2027-02-10', u: 500, k: 'TR', c: 'Salute', n: 'Dentista'}}};
   assert.strictEqual(L.fondoEmergenze(mesi, cfgFE, '2027-02').saldo, 2500);
+  assert.strictEqual(L.fondoEmergenze(mesi, cfgFE, '2027-01').saldo, 3000); // as of the end of the month asked
   const pieno = {...cfgFE, fondoEmergenze: {...cfgFE.fondoEmergenze, obiettivo: 3000}};
   assert.strictEqual(L.fondoEmergenze({}, pieno, '2027-02').sotto, false);
   assert.strictEqual(L.fondoEmergenze({}, {categorie: []}, '2027-02'), null);
-  assert.strictEqual(L.fondoEmergenze({}, {...cfgFE, salvadanai: []}, '2027-02'), null); // no pot with that name
+  assert.strictEqual(L.fondoEmergenze({}, {...cfgFE, conti: [{nome: 'Rev'}]}, '2027-02'), null); // no such account
+  assert.ok(L.fondoEmergenze({}, {...cfgFE, fondoEmergenze: {conto: 'TR', sottosaldo: 'Old', obiettivo: 6000}}, '2027-02')); // a leftover sottosaldo is ignored
 });
 test('fondoEmergenze: reminder only in January and July', () => {
   const p = m => L.fondoEmergenze({}, cfgFE, '2027-' + m).promemoria;
   assert.deepStrictEqual(['01', '02', '06', '07', '12'].map(p), [true, false, false, true, false]);
 });
-test('usoFondo: a plain expense from the fund needs a note, other rows do not', () => {
+test('usoFondo: an expense or a transfer out of the fund account needs a note, other rows do not', () => {
   const fe = cfgFE;
-  assert.strictEqual(L.usoFondoSenzaNota(fe, {c: 'Fondo emergenze', u: 50, n: ''}), true);
-  assert.strictEqual(L.usoFondoSenzaNota(fe, {c: 'Fondo emergenze', u: 50, n: '  '}), true);
-  assert.strictEqual(L.usoFondoSenzaNota(fe, {c: 'Fondo emergenze', u: 50, n: 'Dentista'}), false);
-  assert.strictEqual(L.usoFondoSenzaNota(fe, {c: 'Svago', u: 50, n: ''}), false);
-  assert.strictEqual(L.usoFondoSenzaNota(fe, {c: 'Fondo emergenze', e: 50, t: 'x2', n: ''}), false); // income into the fund is not a use
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {k: 'TR', c: 'Salute', u: 50, n: ''}), true);
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {k: 'TR', c: 'Salute', u: 50, n: '  '}), true);
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {k: 'TR', c: 'Salute', u: 50, n: 'Dentista'}), false);
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {k: 'Rev', c: 'Svago', u: 50, n: ''}), false);
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {k: 'TR', e: 50, c: 'Rimborsi', n: ''}), false); // income into the fund is not a use
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {t: 'g', k: 'TR', a: 'Rev', u: 30}), true);
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {t: 'g', k: 'TR', a: 'Rev', u: 30, n: 'car repair'}), false);
+  assert.strictEqual(L.usoFondoSenzaNota(fe, {t: 'g', k: 'Rev', a: 'TR', u: 30}), false); // money in: no note needed
 });
-test('destinazioneExtra: the emergency fund goal can come from cfg.fondoEmergenze', () => {
-  const cfg = {salvadanai: [svX('Fondo emergenze', 800), svX('Investimenti', 0)], fondoEmergenze: {sottosaldo: 'Fondo emergenze', obiettivo: 1000}};
-  assert.strictEqual(L.destinazioneExtra({}, cfg, {d: '2027-02-03', e: 300}).b, 'Fondo emergenze');
+test('destinazioneExtra: the emergency fund goal comes from cfg.fondoEmergenze and the balance of its account', () => {
+  const cfg = {salvadanai: [svX('Fondo emergenze', 5000), svX('Investimenti', 0)], conti: [{nome: 'TR', saldoIniziale: {data: '2027-01-01', importo: 500}}], fondoEmergenze: {conto: 'TR', obiettivo: 1000}};
+  assert.strictEqual(L.destinazioneExtra({}, cfg, {d: '2027-02-03', e: 300}).b, 'Fondo emergenze'); // account 500 < 1000, although the pot says 5000
 });
-test('validaConfig: fondoEmergenze must name an existing pot and have a valid goal', () => {
-  const ok = {...cfgFE, conti: [{nome: 'TR'}, {nome: 'Rev'}]};
-  assert.deepStrictEqual(L.validaConfig(ok), []);
-  assert.strictEqual(L.validaConfig({...ok, fondoEmergenze: {sottosaldo: 'Nope', obiettivo: 10}}).length, 1);
-  assert.strictEqual(L.validaConfig({...ok, fondoEmergenze: {sottosaldo: 'Fondo emergenze', obiettivo: -5}}).length, 1);
+test('validaConfig: fondoEmergenze must name an existing account and have a valid goal', () => {
+  assert.deepStrictEqual(L.validaConfig(cfgFE), []);
+  assert.strictEqual(L.validaConfig({...cfgFE, fondoEmergenze: {conto: 'Nope', obiettivo: 10}}).length, 1);
+  assert.strictEqual(L.validaConfig({...cfgFE, fondoEmergenze: {conto: 'TR', obiettivo: -5}}).length, 1);
 });
 
 // R1: strict form validation (parseAmount stays lenient, for the sheet import)
@@ -792,82 +796,53 @@ test('validaConfig: opening balance of an account and the checks must be valid',
   assert.ok(L.validaConfig({...base, controlli: [{d: '2026-11-20', k: 'Z', banca: 1, strumento: 1, diff: 0}]}).length);
 });
 
-// ---- 3.2: sub-balances of an account (Trade Republic) and investments
-const cfgSS = {
-  conti: [{nome: 'Rev'}, {nome: 'TR', saldoIniziale: {data: '2027-01-01', importo: 1050},
-    sottosaldi: [{nome: 'Fondo', saldoIniziale: {data: '2027-01-01', importo: 1000}}, {nome: 'Inv'}]}],
-  investimenti: {conto: 'TR', sottosaldo: 'Inv', valore: [{d: '2027-03-01', importo: 130}, {d: '2027-02-01', importo: 90}]},
+// ---- 3.2 / R6: Trade Republic as two ordinary accounts (fund and investments), investments with paid in and value
+const cfgTR = {
+  conti: [{nome: 'Rev'}, {nome: 'TRF', saldoIniziale: {data: '2027-01-01', importo: 1000}}, {nome: 'TRI', saldoIniziale: {data: '2027-01-01', importo: 50}}],
+  investimenti: {conto: 'TRI', valore: [{d: '2027-03-01', importo: 130}, {d: '2027-02-01', importo: 90}]},
 };
-const mesiSS = {'2027-01': {
-  a: {d: '2027-01-12', u: 50, t: 'g', k: 'Rev', a: 'TR', ss: 'Inv'},        // monthly plan: into the investments sub-balance
-  b: {d: '2027-01-15', u: 20, t: 'g', k: 'Rev', a: 'TR'},                   // into TR without a choice: not assigned
-  c: {d: '2027-01-20', u: 30, t: 'g', k: 'TR', a: 'Rev', ss: 'Fondo'}},   // out of the fund
+const mesiTR = {'2027-01': {
+  a: {d: '2027-01-12', u: 50, t: 'g', k: 'Rev', a: 'TRI'},     // monthly plan: into the investments account
+  b: {d: '2027-01-15', u: 20, t: 'g', k: 'Rev', a: 'TRF'},     // into the fund
+  c: {d: '2027-01-20', u: 30, t: 'g', k: 'TRF', a: 'Rev'}},    // out of the fund
   '2027-02': {
-  d: {d: '2027-02-12', u: 50, t: 'g', k: 'Rev', a: 'TR', ss: 'Inv'},
-  e: {d: '2027-02-14', u: 10, c: 'Fee', k: 'TR', ss: 'Inv'},                // plain expense charged to a sub-balance
-  f: {d: '2026-12-20', u: 999, t: 'g', k: 'Rev', a: 'TR', ss: 'Inv'}}};   // before the opening date: already inside it
+  d: {d: '2027-02-12', u: 50, t: 'g', k: 'Rev', a: 'TRI'},
+  e: {d: '2027-02-14', u: 10, c: 'Fee', k: 'TRI'},             // a fee: lowers the balance, is not money put in
+  g: {d: '2027-02-20', u: 15, t: 'g', k: 'TRI', a: 'TRF'},     // between the two accounts: an ordinary transfer
+  f: {d: '2026-12-20', u: 999, t: 'g', k: 'Rev', a: 'TRI'}}};  // before the opening date: already inside it
 
-test('sottosaldo: opening balance + rows dated from it; arrival side wins, a transfer out of the account counts negative', () => {
-  assert.strictEqual(L.sottosaldo(mesiSS, cfgSS, 'TR', 'Inv'), 90);   // 50 + 50 - 10
-  assert.strictEqual(L.sottosaldo(mesiSS, cfgSS, 'TR', 'Fondo'), 970); // 1000 - 30
-  assert.strictEqual(L.sottosaldo(mesiSS, cfgSS, 'TR', 'Inv', '2027-01-31'), 50); // as of a day
+test('the two Trade Republic accounts are ordinary rows of saldi(); a transfer between them is an ordinary transfer', () => {
+  const s = L.saldi(mesiTR, cfgTR);
+  assert.strictEqual(s.TRF, 1000 + 20 - 30 + 15);
+  assert.strictEqual(s.TRI, 50 + 50 + 50 - 10 - 15);
 });
 
-test('sottosaldiConto: sub-balances + the part not assigned add up to the whole account balance', () => {
-  const r = L.sottosaldiConto(mesiSS, cfgSS, 'TR');
-  assert.strictEqual(r.saldo, L.saldi(mesiSS, cfgSS).TR);            // the figure to compare with the bank app
-  assert.deepStrictEqual(r.sottosaldi.map(s => [s.nome, s.saldo]), [['Fondo', 970], ['Inv', 90]]);
-  assert.strictEqual(r.nonAssegnato, 70);                            // 50 left at opening + the 20 sent without a choice
-  assert.strictEqual(r.sottosaldi.reduce((t, s) => t + s.saldo, 0) + r.nonAssegnato, r.saldo);
-  assert.strictEqual(L.sottosaldiConto(mesiSS, cfgSS, 'Rev'), null); // no sub-balances
-});
-
-test('investimenti: versato = sub-balance (net money put in), valore = latest manual value, difference between them', () => {
-  const i = L.investimenti(mesiSS, cfgSS, '2027-03-15');
-  assert.deepStrictEqual([i.versato, i.valore, i.data, i.diff], [90, 130, '2027-03-01', 40]);
-  const prima = L.investimenti(mesiSS, cfgSS, '2027-02-15'); // a later value is not known yet
-  assert.deepStrictEqual([prima.valore, prima.data, prima.diff], [90, '2027-02-01', 0]);
-  const senza = L.investimenti(mesiSS, {...cfgSS, investimenti: {conto: 'TR', sottosaldo: 'Inv'}}, '2027-03-15');
+test('investimenti: versato = opening + net transfers into the account, valore = latest manual value, difference between them', () => {
+  const i = L.investimenti(mesiTR, cfgTR, '2027-03-15');
+  assert.deepStrictEqual([i.versato, i.valore, i.data, i.diff], [135, 130, '2027-03-01', -5]); // 50 + 50 + 50 - 15, the fee is not paid in
+  const prima = L.investimenti(mesiTR, cfgTR, '2027-02-15'); // a later value and the later transfer are not known yet
+  assert.deepStrictEqual([prima.versato, prima.valore, prima.data, prima.diff], [150, 90, '2027-02-01', -60]);
+  const senza = L.investimenti(mesiTR, {...cfgTR, investimenti: {conto: 'TRI'}}, '2027-03-15');
   assert.deepStrictEqual([senza.valore, senza.diff], [null, null]);  // no value typed yet
-  assert.strictEqual(L.investimenti(mesiSS, {...cfgSS, investimenti: undefined}), null);
+  assert.strictEqual(L.investimenti(mesiTR, {...cfgTR, investimenti: undefined}), null);
+  assert.strictEqual(L.investimenti(mesiTR, {...cfgTR, investimenti: {conto: 'Nope'}}), null);
+  assert.ok(L.investimenti(mesiTR, {...cfgTR, investimenti: {conto: 'TRI', sottosaldo: 'Old'}}, '2027-03-15')); // a leftover sottosaldo is ignored
 });
 
-test('valoreInvestimenti: what the net worth takes (the value, not the paid in); the paid in until a value is typed', () => {
-  assert.strictEqual(L.valoreInvestimenti(mesiSS, cfgSS, '2027-03-15'), 130);
-  assert.strictEqual(L.valoreInvestimenti(mesiSS, {...cfgSS, investimenti: {conto: 'TR', sottosaldo: 'Inv'}}, '2027-03-15'), 90);
-  assert.strictEqual(L.valoreInvestimenti(mesiSS, {conti: []}, '2027-03-15'), 0);
+test('fondoEmergenze: the balance is the balance of its account, with the opening balance like any account', () => {
+  const cfg = {...cfgTR, categorie: [{nome: 'Affitto', gruppo: 'Necessarie', budget: 500}], fondoEmergenze: {conto: 'TRF', obiettivo: 2000}};
+  const f = L.fondoEmergenze(mesiTR, cfg, '2027-02');
+  assert.deepStrictEqual([f.saldo, f.necessarie, f.mesi, f.sotto, f.manca], [1005, 500, 2.01, true, 995]);
+  assert.strictEqual(L.fondoEmergenze(mesiTR, {...cfg, fondoEmergenze: {conto: 'Nope'}}, '2027-02'), null);
 });
 
-test('fondoEmergenze: with a sub-balance of that name in the account, the balance comes from it (no pot needed)', () => {
-  const cfg = {...cfgSS, categorie: [{nome: 'Affitto', gruppo: 'Necessarie', budget: 500}], fondoEmergenze: {conto: 'TR', sottosaldo: 'Fondo', obiettivo: 2000}};
-  const f = L.fondoEmergenze(mesiSS, cfg, '2027-02');
-  assert.deepStrictEqual([f.saldo, f.necessarie, f.mesi, f.sotto, f.manca], [970, 500, 1.94, true, 1030]);
-  assert.strictEqual(L.fondoEmergenze(mesiSS, {...cfg, fondoEmergenze: {conto: 'TR', sottosaldo: 'Nope'}}, '2027-02'), null);
-});
-
-test('usoFondoSenzaNota: also an expense or a transfer out charged to the fund sub-balance', () => {
-  const cfg = {...cfgSS, fondoEmergenze: {conto: 'TR', sottosaldo: 'Fondo'}};
-  assert.strictEqual(L.usoFondoSenzaNota(cfg, {u: 30, k: 'TR', ss: 'Fondo', c: 'X'}), true);
-  assert.strictEqual(L.usoFondoSenzaNota(cfg, {u: 30, t: 'g', k: 'TR', a: 'Rev', ss: 'Fondo'}), true);
-  assert.strictEqual(L.usoFondoSenzaNota(cfg, {u: 30, t: 'g', k: 'TR', a: 'Rev', ss: 'Fondo', n: 'car repair'}), false);
-  assert.strictEqual(L.usoFondoSenzaNota(cfg, {u: 30, t: 'g', k: 'Rev', a: 'TR', ss: 'Fondo'}), false); // money in: no note needed
-  assert.strictEqual(L.usoFondoSenzaNota(cfg, {u: 30, k: 'TR', ss: 'Inv', c: 'X'}), false);
-});
-
-test('validaConfig: sub-balances and investments must be valid', () => {
-  assert.deepStrictEqual(L.validaConfig(cfgSS), []);
-  assert.ok(L.validaConfig({...cfgSS, conti: [{nome: 'TR', sottosaldi: [{nome: 'A'}, {nome: 'a'}]}]}).length);              // duplicate name
-  assert.ok(L.validaConfig({...cfgSS, conti: [{nome: 'TR', sottosaldi: [{nome: 'A', saldoIniziale: {data: 'x', importo: 1}}]}]}).length);
-  assert.ok(L.validaConfig({...cfgSS, investimenti: {conto: 'TR', sottosaldo: 'Nope'}}).length);                            // no such sub-balance
-  assert.ok(L.validaConfig({...cfgSS, investimenti: {conto: 'TR', sottosaldo: 'Inv', valore: [{d: '2027-13-01', importo: 5}]}}).length);
-  assert.ok(L.validaConfig({...cfgSS, investimenti: {conto: 'TR', sottosaldo: 'Inv', valore: [{d: '2027-03-01', importo: -5}]}}).length);
-  const fe = {...cfgSS, fondoEmergenze: {conto: 'TR', sottosaldo: 'Fondo', obiettivo: 10}};
-  assert.deepStrictEqual(L.validaConfig(fe), []);                                                                            // a sub-balance is enough, no pot
-});
-
-test('destinazioneExtra: the fund is "touched" by its sub-balance balance when it has one', () => {
-  const cfg = {...cfgSS, salvadanai: [{nome: 'Fondo', gruppo: 'Risparmi', conto: 'TR', saldoIniziale: {data: '2027-01-01', importo: 9999}}], fondoEmergenze: {conto: 'TR', sottosaldo: 'Fondo', obiettivo: 2000}};
-  assert.strictEqual(L.destinazioneExtra(mesiSS, cfg, {d: '2027-02-20', e: 500}).b, 'Fondo'); // sub-balance 970 < 2000, although the pot says 9999
+test('validaConfig: investments and the fund name an existing account; values must be valid; old sottosaldi are ignored', () => {
+  assert.deepStrictEqual(L.validaConfig(cfgTR), []);
+  assert.ok(L.validaConfig({...cfgTR, investimenti: {conto: 'Nope'}}).length);                                            // no such account
+  assert.ok(L.validaConfig({...cfgTR, investimenti: {conto: 'TRI', valore: [{d: '2027-13-01', importo: 5}]}}).length);
+  assert.ok(L.validaConfig({...cfgTR, investimenti: {conto: 'TRI', valore: [{d: '2027-03-01', importo: -5}]}}).length);
+  const vecchio = {...cfgTR, conti: [...cfgTR.conti.slice(0, 2), {nome: 'TRI', sottosaldi: [{nome: 'A'}, {nome: 'a'}]}]};
+  assert.deepStrictEqual(L.validaConfig(vecchio), []);                                                                    // a leftover sottosaldi list is not even read
 });
 
 // ---- 3.3 month closing (made-up data) ----
@@ -963,21 +938,23 @@ const cfgW = () => ({
   conti: [
     {nome: 'Banca', saldoIniziale: {data: '2026-01-01', importo: 1000}},
     {nome: 'Cond', joint: true, saldoIniziale: {data: '2026-01-01', importo: 2000}},
-    {nome: 'Broker', saldoIniziale: {data: '2026-01-01', importo: 500}, sottosaldi: [{nome: 'Emerg', saldoIniziale: {data: '2026-01-01', importo: 300}}, {nome: 'Inv', saldoIniziale: {data: '2026-01-01', importo: 150}}]},
+    {nome: 'Fondo', saldoIniziale: {data: '2026-01-01', importo: 300}},
+    {nome: 'Inv', saldoIniziale: {data: '2026-01-01', importo: 150}},
   ],
   quotaJoint: [{da: '2026-01-01', pct: 50}],
-  investimenti: {conto: 'Broker', sottosaldo: 'Inv', valore: [{d: '2026-02-01', importo: 200}]},
+  investimenti: {conto: 'Inv', valore: [{d: '2026-02-01', importo: 200}]},
 });
 const pv = (r, nome) => r.componenti.find(c => c.nome === nome).importo;
 
-test('patrimonio: accounts, Joint at my share, investments at value, no double count of the sub-balance', () => {
+test('patrimonio: accounts, Joint at my share, the investments account at value instead of its balance', () => {
   const r = L.patrimonio({}, cfgW(), '2026-03-01');
   assert.strictEqual(pv(r, 'Banca'), 1000);
   assert.strictEqual(pv(r, 'Cond'), 1000); // 50% of 2000
-  assert.strictEqual(pv(r, 'Broker'), 350); // 500 minus the 150 paid into investments (those are counted at value)
-  assert.strictEqual(pv(r, 'Investimenti'), 200);
-  assert.strictEqual(r.totale, 2550);
-  assert.strictEqual(L.patrimonio({}, cfgW(), '2026-01-15').totale, 2500); // no value typed yet: paid in
+  assert.strictEqual(pv(r, 'Fondo'), 300);
+  assert.strictEqual(pv(r, 'Inv'), 200); // the value, not the 150 of the balance, and no second line
+  assert.strictEqual(r.componenti.filter(c => c.tipo === 'investimenti').length, 1);
+  assert.strictEqual(r.totale, 2500);
+  assert.strictEqual(L.patrimonio({}, cfgW(), '2026-01-15').totale, 2450); // no value typed yet: the balance
 });
 
 test('patrimonio: the Joint uses the share in force at the date; a partner top-up counts only at my share', () => {
@@ -992,17 +969,17 @@ test('patrimonio: the Joint uses the share in force at the date; a partner top-u
 });
 
 test('patrimonio: a transfer between accounts changes nothing; spending does', () => {
-  const mesi = {'2026-02': {a: {d: '2026-02-05', u: 100, k: 'Banca', a: 'Broker', t: 'g'}}};
-  assert.strictEqual(L.patrimonio(mesi, cfgW(), '2026-03-01').totale, 2550);
+  const mesi = {'2026-02': {a: {d: '2026-02-05', u: 100, k: 'Banca', a: 'Fondo', t: 'g'}}};
+  assert.strictEqual(L.patrimonio(mesi, cfgW(), '2026-03-01').totale, 2500);
   mesi['2026-02'].b = {d: '2026-02-06', u: 30, k: 'Banca', c: 'X'};
-  assert.strictEqual(L.patrimonio(mesi, cfgW(), '2026-03-01').totale, 2520);
+  assert.strictEqual(L.patrimonio(mesi, cfgW(), '2026-03-01').totale, 2470);
 });
 
-test('patrimonio: money paid into investments moves from the account to the paid in; the value decides the total', () => {
-  const mesi = {'2026-02': {a: {d: '2026-02-12', u: 50, k: 'Banca', a: 'Broker', t: 'g', ss: 'Inv'}}};
-  const r = L.patrimonio(mesi, cfgW(), '2026-03-01'); // paid in 200, value still 200: Banca -50, investments value unchanged, Broker -50 + 50 paid in
-  assert.strictEqual(r.totale, 2500);
-  assert.strictEqual(pv(r, 'Broker'), 350); assert.strictEqual(pv(r, 'Banca'), 950);
+test('patrimonio: money paid into investments leaves the account; the value decides what it is worth', () => {
+  const mesi = {'2026-02': {a: {d: '2026-02-12', u: 50, k: 'Banca', a: 'Inv', t: 'g'}}};
+  const r = L.patrimonio(mesi, cfgW(), '2026-03-01'); // value still 200: Banca -50, the investments line unchanged until the value is updated
+  assert.strictEqual(r.totale, 2450);
+  assert.strictEqual(pv(r, 'Inv'), 200); assert.strictEqual(pv(r, 'Banca'), 950);
 });
 
 test('patrimonio: a closed account keeps what it holds; an account not yet opened at the date is left out and flagged', () => {
@@ -1023,14 +1000,14 @@ test('patrimonio: an open account without an opening balance is flagged; open cr
   assert.strictEqual(L.patrimonio({}, c2, '2026-02-20').componenti.some(c => c.tipo === 'tcg'), false);
   const mesi = {'2026-02': {a: {d: '2026-02-05', u: 100, p: 60, k: 'Banca', c: 'Cena'}}};
   const r = L.patrimonio(mesi, cfgW(), '2026-03-01');
-  assert.strictEqual(r.crediti, 40); assert.strictEqual(r.totale, 2450);
+  assert.strictEqual(r.crediti, 40); assert.strictEqual(r.totale, 2400);
 });
 
 test('patrimonioSerie: end of every month from the oldest data to today, with the change on the month before', () => {
   const mesi = {'2026-01': {a: {d: '2026-01-10', u: 100, k: 'Banca', c: 'X'}}, '2026-03': {b: {d: '2026-03-03', e: 500, k: 'Banca', c: 'Stip'}}};
   const s = L.patrimonioSerie(mesi, cfgW(), '2026-03-20');
   assert.deepStrictEqual(s.map(x => x.ym), ['2026-01', '2026-02', '2026-03']);
-  assert.deepStrictEqual(s.map(x => x.totale), [2400, 2450, 2950]); // Feb: the investments get their value (200 vs 150)
+  assert.deepStrictEqual(s.map(x => x.totale), [2350, 2400, 2900]); // Feb: the investments line gets its value (200 vs the balance 150)
   assert.deepStrictEqual(s.map(x => x.delta), [null, 50, 500]);
   assert.strictEqual(s[0].parziale, false);
   const cfg = cfgW(); cfg.conti[0].saldoIniziale.data = '2026-02-01';
@@ -1048,14 +1025,14 @@ const cfgG = () => ({
     {nome: 'Viaggi di coppia', gruppo: 'Risparmi', conto: 'Banca', quota: 50, saldoIniziale: {data: '2026-01-01', importo: 0}},
     {nome: 'Auto', gruppo: 'Necessarie', conto: 'Banca', quota: 30, saldoIniziale: {data: '2026-01-01', importo: 0}},
   ],
-  conti: [{nome: 'Banca', saldoIniziale: {data: '2026-01-01', importo: 0}}, {nome: 'Broker', sottosaldi: [{nome: 'Inv'}]}],
-  investimenti: {conto: 'Broker', sottosaldo: 'Inv'},
+  conti: [{nome: 'Banca', saldoIniziale: {data: '2026-01-01', importo: 0}}, {nome: 'Broker'}],
+  investimenti: {conto: 'Broker'},
 });
 const mesiG = () => ({'2026-02': {
   s: {d: '2026-02-05', e: 2000, k: 'Banca', c: 'Stipendio'},
   a: {d: '2026-02-06', u: 500, k: 'Banca', c: 'Affitto'}, b: {d: '2026-02-09', u: 250, k: 'Banca', c: 'Cena'},
   c: {d: '2026-02-12', u: 20, k: 'Banca', c: 'Auto'},
-  g: {d: '2026-02-12', u: 50, k: 'Banca', a: 'Broker', t: 'g', ss: 'Inv'},
+  g: {d: '2026-02-12', u: 50, k: 'Banca', a: 'Broker', t: 'g'},
 }});
 
 test('riepilogoGruppi: per group the plan budget, what was spent, the residual and the shares of the salary', () => {
@@ -1092,7 +1069,7 @@ test('tassoRisparmio: a surplus put in the buffer by the month closing counts, o
   const cfg = cfgG();
   cfg.chiusure = {'2026-02': {righe: [{c: 'X', tipo: 'avanzo', importo: 60, a: 'Cuscinetto', coperto: 10}, {c: 'Y', tipo: 'avanzo', importo: 70, a: '', coperto: 0}]}};
   assert.strictEqual(L.tassoRisparmio(mesiG(), cfg, '2026-02').cuscinetto, 150);
-  const mesi = mesiG(); mesi['2026-02'].w = {d: '2026-02-20', u: 90, k: 'Broker', a: 'Banca', t: 'g', ss: 'Inv'};
+  const mesi = mesiG(); mesi['2026-02'].w = {d: '2026-02-20', u: 90, k: 'Broker', a: 'Banca', t: 'g'};
   assert.strictEqual(L.tassoRisparmio(mesi, cfgG(), '2026-02').pac, 0);
 });
 
@@ -1130,4 +1107,10 @@ test('chiusuraStato: a pot with sottoZero never blocks reopening a month', () =>
   assert.strictEqual(L.chiusuraStato(cfg, '2026-01', mesi).puoRiaprire, true);
   delete cfg.salvadanai[0].sottoZero;
   assert.strictEqual(L.chiusuraStato(cfg, '2026-01', mesi).puoRiaprire, false);
+});
+
+test('tassoRisparmio: a transfer from the fund account to the investments account counts as PAC (R6)', () => {
+  const cfg = {...cfgG(), conti: [{nome: 'Banca'}, {nome: 'Fondo'}, {nome: 'Broker'}]};
+  const mesi = mesiG(); mesi['2026-02'].h = {d: '2026-02-15', u: 30, k: 'Fondo', a: 'Broker', t: 'g'};
+  assert.strictEqual(L.tassoRisparmio(mesi, cfg, '2026-02').pac, 80); // 50 from the bank + 30 from the fund
 });
