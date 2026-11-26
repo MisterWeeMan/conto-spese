@@ -1,6 +1,6 @@
 # CLAUDE.md — Conto Spese
 
-Personal expense ledger of the user (single user). Born from the Google Sheet "Budgeting 26". **Until the final migration (the user will say when, by 31 Dec 2026 at the latest) the sheet is still the source of truth and the app is a test bench**: Firestore holds a copy plus test data, all disposable. From 1 Jan 2027 the app is the source of truth.
+Personal expense ledger of the user (single user). Born from the Google Sheet "Budgeting 26". **Until the day the user says (31 Dec 2026 at the latest) the sheet is still the source of truth and the app is a test bench** with disposable test data. Then the test data is wiped (Configurazione → Dati → "Azzera i dati di prova") and the app starts from zero with no 2026 history; the sheet stays read-only as the 2026 archive. After that the app's ledger is the real ledger.
 
 Product and plan: `docs/visione.md` and `docs/strategia-2027.md` (private), `CONTEXT.md` (vocabulary, use these terms in code), `docs/spec.md` (data model and rules), `docs/piano.md` (tasks and calendar).
 
@@ -25,7 +25,7 @@ Product and plan: `docs/visione.md` and `docs/strategia-2027.md` (private), `CON
 5. **Commit and push.** Outside the plan activities (step 6): only when asked, and say before a push that it deploys the site.
 6. **Activities of `docs/piano.md`.** One session per activity: do only that one, then stop (never start the next). At the end, automatically and in this order: run `node --test`; run step 4 (review and data check) on the diff and fix real findings; mark the row done in `docs/piano.md` (one line on what was done and any note for later activities); from activity 2.1 on, add this activity's manual tests to `docs/test-manuali/priorita-N.md` (see "Manual-test documents" below); commit only the files of this activity (English message, with the attribution line) and push to `main`; report in chat, saying that the push deployed the site. Stop and ask instead if tests fail, a review finding is not fixed, the diff holds real ledger data or a file under `dati/`, or the change touches login, Firestore writes or the import and `/security-review` finds something.
 
-No backup is needed before the final migration (the data is a copy of the sheet, decided 2026-11-22). After it, back up before any format change.
+No backup is needed while the data is test data (decided 2026-11-22). After the start from zero, back up before any format change.
 
 ## Manual-test documents (user's decision, 2026-11-25; from priority 2)
 
@@ -50,7 +50,7 @@ Same Firebase project as `one-piece-collection-tracker` (`one-piece-tracker-c7b8
 
 - `users/<uid>/spese_mesi/<YYYY-MM>` = `{mov: {<id>: {d: 'YYYY-MM-DD', n: note, e: income, u: expense, c: category, k: account, x: 1 if deleted}}}`. Writes use `setDoc(..., {merge: true})` on a single movement; the app always writes every field (a missing field would keep the old value). Delete = tombstone `x: 1`. Imported ids `i00000`…, app ids `m<base36 time><rand>`.
 - `users/<uid>/spese_config/main` = `{budget: {category: annual euro}, categorie: [...], conti: [...]}`. Old `gruppi` and `colori` fields may still be stored: the app ignores them.
-- Until the final migration the stored data is a disposable copy of the sheet: no backup, no care for old data. The migration is repeatable (wipe and re-import from the sheet). Never run the final one unless the user says so. After it the data is the real ledger: back up before any later format change.
+- Until the start from zero the stored data is disposable test data: no backup, no care for old data. Never run "Azzera i dati di prova" unless the user says so (2026 history is NOT imported, decided 2026-11-26; see `docs/spec.md` "Avvio senza storico"). After it the data is the real ledger: back up before any later format change.
 - Offline: Firestore persistent cache; writes are not awaited on purpose (they settle only when the network is back).
 
 ## Budget rule (OLD, from the sheet; replaced by `docs/spec.md`)

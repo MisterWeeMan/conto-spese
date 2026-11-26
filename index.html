@@ -366,17 +366,18 @@ details summary{cursor:pointer;font-weight:500}
     </section>
     <section class="box">
       <h2>Dati</h2>
-      <p class="stato">Carica un file JSON con <code>mesi</code> (movimenti) e/o <code>config</code> (configurazione), come <code>dati/import-2026.json</code> o <code>dati/config-2027.json</code>. I movimenti già presenti con lo stesso identificativo vengono sovrascritti, gli altri restano. Una configurazione nuova sostituisce le liste di categorie, conti e salvadanai, la quota Joint, le soglie e i piani dei mesi nel file. Il file viene controllato prima di scrivere: se non va, vedi il motivo.</p>
+      <p class="stato">Carica un file JSON con <code>mesi</code> (movimenti) e/o <code>config</code> (configurazione), come <code>dati/config-2027.json</code>. I movimenti già presenti con lo stesso identificativo vengono sovrascritti, gli altri restano. Una configurazione nuova sostituisce le liste di categorie, conti e salvadanai, la quota Joint, le soglie e i piani dei mesi nel file. Il file viene controllato prima di scrivere: se non va, vedi il motivo.</p>
       <input id="importa" type="file" accept=".json,application/json" aria-label="File da importare">
     </section>
-    <section class="box" id="sostBox">
-      <h2>Sostituisci il 2026</h2>
-      <p class="stato">Per la migrazione dal foglio. <b>Cancella tutti i movimenti del 2026 già presenti</b> (anche quelli di prova) e li sostituisce con quelli del file, per esempio <code>dati/import-2026-nuovo.json</code>. Non tocca i mesi 2027 né la configurazione. Prima di scrivere vedi quanti movimenti spariscono e quanti arrivano, e devi confermare. Non c'è un annulla: i dati restano solo nel foglio e nel file.</p>
-      <input id="sostituisci" type="file" accept=".json,application/json" aria-label="File con i movimenti del 2026">
-      <div id="sostPanel" hidden>
-        <p class="stato" id="sostTesto" role="status"></p>
-        <div class="azioni"><button class="btn peric" id="sostOk" type="button">Cancella e sostituisci il 2026</button><button class="btn" id="sostNo" type="button">Annulla</button></div>
-      </div>
+    <section class="box" id="azzBox">
+      <h2>Azzera i dati di prova</h2>
+      <p class="stato">Per partire da zero. <b>Cancella i movimenti di tutti i mesi</b> (anche quelli di prova). Categorie, conti, salvadanai, quota Joint, soglie, obiettivi, voci, fondo emergenze e investimenti non si toccano. Non c'è un annulla.</p>
+      <label class="chk tutta"><input type="checkbox" id="azzControlli" checked>Azzera anche i controlli dei saldi</label>
+      <label class="chk tutta"><input type="checkbox" id="azzChiusure" checked>Azzera anche le chiusure del mese</label>
+      <label class="chk tutta"><input type="checkbox" id="azzPiani" checked>Azzera anche i piani del mese</label>
+      <p class="stato" id="azzTesto" role="status"></p>
+      <label class="tutta"><span>Per confermare scrivi AZZERA</span><input id="azzParola" autocomplete="off" aria-label="Scrivi AZZERA per confermare"></label>
+      <div class="azioni"><button class="btn peric" id="azzOk" type="button" disabled>Cancella i dati di prova</button></div>
     </section>
   </div>
 
@@ -405,7 +406,7 @@ details summary{cursor:pointer;font-weight:500}
         <label data-per="u e"><span>Categoria<b data-ob="u e" class="ob" aria-hidden="true">*</b></span><select id="categoria"></select></label>
         <label class="tutta" id="destL" hidden><span>Destinazione<b class="ob" aria-hidden="true">*</b></span><select id="dest"></select></label>
         <p class="stato tutta" id="destNota" hidden></p>
-        <label data-per="u e g vj cr rb" id="contoL"><span>Conto<b class="ob" aria-hidden="true">*</b></span><select id="conto"></select></label>
+        <label data-per="u e g vj cr rb" id="contoL"><span>Conto<b class="ob" data-ob="u e g vj rb" aria-hidden="true">*</b></span><select id="conto"></select></label>
         <label data-per="g"><span>Conto di arrivo<b class="ob" aria-hidden="true">*</b></span><select id="contoA"></select></label>
         <label class="tutta" data-per="u" id="voceL" hidden>Voce del salvadanaio<select id="voce"></select></label>
         <label class="tutta" data-per="rb"><span>Credito che chiude<b class="ob" aria-hidden="true">*</b></span><select id="credito"></select></label>
@@ -446,7 +447,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {chiusuraProposta, chiusuraCalcola, chiusuraStato, chiusuraMancante, saldoSalvadanaio, mancaRispettoPiano, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota, saldi, differenzaControllo, ultimoControllo, storicoControlli, controlloScaduto, controlliInRitardo, investimenti, patrimonio, patrimonioSerie, riepilogoGruppi, tassoRisparmio} = window.CSLogic;
+const {chiusuraProposta, chiusuraCalcola, chiusuraStato, chiusuraMancante, saldoSalvadanaio, mancaRispettoPiano, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, azzeraPiano, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota, saldi, differenzaControllo, ultimoControllo, storicoControlli, controlloScaduto, controlliInRitardo, investimenti, patrimonio, patrimonioSerie, riepilogoGruppi, tassoRisparmio} = window.CSLogic;
 const {validaImporto, validaQuotaJoint} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 
@@ -554,7 +555,7 @@ function render() {
       : `<p class="vuoto">${cq ? 'Nessuna categoria corrisponde alla ricerca.' : 'Nessuna categoria. Aggiungi la prima dal modulo.'}</p>`;
   }
   $('etList').innerHTML = [...new Set([...etichette(st.mesi).map(r => r.l), ...(st.cfg.etichette || []).map(x => x?.nome).filter(Boolean)])].map(l => `<option value="${esc(l)}">`).join('');
-  renderForm(); renderCfg(); renderPiano(); renderPm(); renderConti(); renderChiusura(); renderPatrimonio();
+  renderForm(); renderCfg(); renderPiano(); renderPm(); renderConti(); renderChiusura(); renderPatrimonio(); renderAzzera();
 }
 
 // Form selects: active categories and accounts, plus the ones the movement being edited already has (archived or closed).
@@ -571,11 +572,11 @@ function renderForm() {
   const nomi = [...(t === 'e' ? categorieEntrata(st.cfg) : categorieAttive(st.cfg)).map(c => c.nome), ...(t === 'u' ? svLista().map(v => v.nome) : [])].sort((a, b) => a.localeCompare(b, 'it'));
   fill('categoria', piu(nomi, e?.c), t === 'u' || t === 'e' ? 'Scegli…' : 'Nessuna');
   const conti = contiAttivi(st.cfg).map(c => c.nome);
-  fill('conto', piu(t === 'vj' ? conti.filter(k => contoJoint(st.cfg, k)) : conti, e?.k), 'Scegli…');
+  fill('conto', piu(t === 'vj' ? conti.filter(k => contoJoint(st.cfg, k)) : conti, e?.k), t === 'cr' ? 'Nessuno (credito iniziale)' : 'Scegli…');
   fill('contoA', piu(conti, e?.a), 'Scegli…');
   fill('dest', piu([st.cfg.extra?.cuscinetto || 'Cuscinetto', ...svLista().map(v => v.nome)], e?.b), 'Scegli…');
-  const aperti = creditiAperti(st.mesi);
-  st.cred = Object.fromEntries(aperti.map(c => [c.id, c.residuo]));
+  const aperti = creditiAperti(st.mesi, st.edit?.id);
+  st.cred = Object.fromEntries(aperti.map(c => [c.id, c]));
   fill('credito', [...aperti.map(c => [c.id, `${c.d.slice(8)}/${c.d.slice(5, 7)} · ${c.n || c.c || 'senza nota'} · ${eur.format(c.residuo)}`]),
     ...(e?.r && !st.cred[e.r] ? [[e.r, 'Credito già scelto']] : [])], 'Scegli…');
   if (!e && !$('conto').value) $('conto').value = ricorda('conto') || '';
@@ -676,7 +677,7 @@ const scrivi = (ym, id, corpo) => setDoc(refMese(ym), {mov: {[id]: corpo}}, {mer
 
 $('form').addEventListener('input', ev => {
   if (ev.target.id === 'dest') $('dest').dataset.man = 1;
-  if (ev.target.id === 'credito' && ev.target.value && !$('importo').value) $('importo').value = String(st.cred[ev.target.value]).replace('.', ',');
+  if (ev.target.id === 'credito' && ev.target.value && !$('importo').value) $('importo').value = String(st.cred[ev.target.value].residuo).replace('.', ',');
   aggiorna();
 });
 $('form').addEventListener('change', ev => { if (ev.target.name === 'tipo') { delete $('dest').dataset.man; renderForm(); } });
@@ -689,7 +690,7 @@ $('form').addEventListener('submit', async ev => {
   if (!ready()) { toast('Il database non è ancora pronto'); return; }
   const k = $('conto').value, c = t === 'u' || t === 'e' ? $('categoria').value : '', entra = t === 'e' || t === 'vj' || t === 'rb';
   const extra = t === 'e' && chiedeDest(c), b = extra ? $('dest').value : '';
-  if (!k) return fail('Scegli il conto', 'conto');
+  if (!k && t !== 'cr') return fail('Scegli il conto', 'conto');
   if (t === 'u' && !c) return fail('Scegli la categoria', 'categoria');
   if (t === 'e' && !c && !(st.edit && !st.edit.c)) return fail(categorieEntrata(st.cfg).length ? 'Scegli la categoria di entrata' : 'Crea prima una categoria di entrata in Categorie', 'categoria');
   if (extra && !b) return fail("Scegli dove va l'entrata", 'dest');
@@ -697,6 +698,7 @@ $('form').addEventListener('submit', async ev => {
   const a = t === 'g' ? $('contoA').value : '', r = t === 'rb' ? $('credito').value : '';
   if (t === 'g' && (!a || a === k)) return fail('Scegli due conti diversi', 'contoA');
   if (t === 'rb' && !r) return fail('Scegli il credito che chiude', 'credito');
+  if (t === 'rb' && st.cred[r]?.tipo === 'cr' && imp > st.cred[r].residuo + 0.005) return fail(`Il rimborso supera quello che resta del credito (${eur.format(st.cred[r].residuo)})`, 'importo');
   // tutti i campi sempre presenti (p, q, a, r, l, t...): la scrittura fonde, quindi un campo omesso terrebbe il valore vecchio
   // t: normal rows are '' (an income outside the funding categories is never in the month; b = chosen destination, always written, '' otherwise; t:'x2' is read but no longer written); the others come from the choice
   const m = {d: $('data').value, n: $('nota').value.trim(), e: entra ? imp : 0, u: entra ? 0 : imp, c, k, a, r, b, p: null, q: null,
@@ -726,7 +728,7 @@ $('form').addEventListener('submit', async ev => {
     const avvisi = t === 'u' ? soglieSuperate(st.mesi, dopo, st.cfg, ym).filter(x => x.c === m.c) : [];
     scrivi(ym, id, m);
     if (st.edit && st.edit.ym !== ym) scrivi(st.edit.ym, id, {x: 1});
-    ricorda('conto', m.k);
+    if (m.k) ricorda('conto', m.k);
     toast((st.edit ? 'Modifiche salvate' : `Aggiunto: ${eur.format(net(m))}${m.c ? ' · ' + m.c : ''}`) +
       avvisi.map(x => ` — Attenzione: ${x.c} al ${Math.round(x.pct * 100)}% del budget (soglia ${x.soglia}%)`).join(''), avvisi.length ? 6000 : 2600);
     if (ym !== st.ym) st.ym = ym;
@@ -819,40 +821,29 @@ $('importa').addEventListener('change', async ev => {
   ev.target.value = '';
 });
 
-// "Replace the 2026" (3.5): the plan comes from logic.js sostituisci2026; whole month documents are written in ONE batch (no merge: tombstones and
-// test rows go too), 2027 and the config are never touched. Nothing is written until the second, explicit click.
-let sost = null, sostMesi = null;
-const sostTesto = p => `Verranno CANCELLATI ${p.cancella.mov} movimenti in ${p.cancella.mesi} mesi del 2026 e IMPORTATI ${p.importa.mov} movimenti in ${p.importa.mesi} mesi. Il 2027 e la configurazione non cambiano.`;
-const sostChiudi = () => { sost = sostMesi = null; $('sostPanel').hidden = true; $('sostituisci').value = ''; };
-$('sostituisci').addEventListener('change', async ev => {
-  const f = ev.target.files[0]; if (!f) return;
-  try {
-    if (!st.uid || !ready()) throw new Error('il database non è ancora pronto');
-    const j = JSON.parse(await f.text());
-    if (!j || typeof j.mesi !== 'object') throw new Error('formato non riconosciuto');
-    const p = window.CSLogic.sostituisci2026(st.mesi, j.mesi);
-    if (p.errori.length) throw new Error(p.errori.join('; '));
-    sost = p; sostMesi = j.mesi;
-    $('sostTesto').textContent = sostTesto(p);
-    $('sostPanel').hidden = false;
-  } catch (err) { sostChiudi(); toast('File non accettato: ' + (err?.message || err)); }
-});
-$('sostNo').addEventListener('click', sostChiudi);
-$('sostOk').addEventListener('click', async () => {
-  if (!sost || !ready()) return;
-  // the database may have changed since the file was picked: recompute, and if the numbers moved show them and ask again
-  const piano = window.CSLogic.sostituisci2026(st.mesi, sostMesi), b = $('sostOk');
-  if (piano.cancella.mov !== sost.cancella.mov || piano.cancella.mesi !== sost.cancella.mesi) { sost = piano; $('sostTesto').textContent = sostTesto(piano); toast('I dati sono cambiati: controlla i numeri e conferma di nuovo'); return; }
+// "Azzera i dati di prova" (3.6): deletes every month document and, if ticked, the checks, closures and plans of the config. Batches of
+// 400 operations (the limit is 500); the config part goes in the last one. Needs the word AZZERA; the numbers are recomputed at the click.
+const azzOpz = () => ({controlli: $('azzControlli').checked, chiusure: $('azzChiusure').checked, piani: $('azzPiani').checked});
+function renderAzzera() {
+  if ($('pagConfig').hidden || !ready()) return;
+  const p = azzeraPiano(st.mesi, st.cfg, azzOpz()), parti = [p.controlli && p.controlli + ' controlli dei saldi', p.chiusure && p.chiusure + ' chiusure', p.piani && p.piani + ' piani'].filter(Boolean);
+  $('azzTesto').textContent = `Verranno CANCELLATI ${p.mov} movimenti in ${p.mesi} mesi${parti.length ? ' e azzerati ' + parti.join(', ') : ''}.`;
+  $('azzOk').disabled = $('azzParola').value.trim() !== 'AZZERA' || !p.mesi && !p.campi.length;
+}
+['azzControlli', 'azzChiusure', 'azzPiani', 'azzParola'].forEach(id => $(id).addEventListener('input', renderAzzera));
+$('azzOk').addEventListener('click', async () => {
+  if (!ready() || $('azzParola').value.trim() !== 'AZZERA') return;
+  const p = azzeraPiano(st.mesi, st.cfg, azzOpz()), b = $('azzOk');
   b.disabled = true;
   try {
-    const batch = writeBatch(db);
-    Object.entries(piano.scritture).forEach(([ym, mov]) => batch.set(refMese(ym), {mov}));
-    toast('Sostituisco il 2026…');
-    await batch.commit();
-    toast(`2026 sostituito: ${piano.importa.mov} movimenti in ${piano.importa.mesi} mesi`);
-    sostChiudi();
+    toast('Azzero i dati di prova…');
+    const ops = p.nomiMesi.map(ym => bt => bt.delete(refMese(ym)));
+    if (p.campi.length) ops.push(bt => bt.set(refCfg(), Object.fromEntries(p.campi.map(f => [f, deleteField()])), {merge: true}));
+    for (let i = 0; i < ops.length; i += 400) { const bt = writeBatch(db); ops.slice(i, i + 400).forEach(f => f(bt)); await bt.commit(); }
+    toast(`Cancellati ${p.mov} movimenti in ${p.mesi} mesi`);
+    $('azzParola').value = '';
   } catch (err) { errore(err); }
-  b.disabled = false;
+  renderAzzera();
 });
 
 // Categories page
@@ -1258,7 +1249,7 @@ function renderRiepilogo(ym) {
 function renderPatrimonio() {
   if ($('pagPatrimonio').hidden) return;
   if (!ready()) { $('ptComp').innerHTML = '<p class="vuoto">Carico i dati…</p>'; return; }
-  const oggi = todayISO(), p = patrimonio(st.mesi, st.cfg, oggi), inv = st.cfg.investimenti && investimenti(st.mesi, st.cfg, oggi);
+  const oggi = todayISO(), cred = creditiAperti(st.mesi), p = patrimonio(st.mesi, st.cfg, oggi), inv = st.cfg.investimenti && investimenti(st.mesi, st.cfg, oggi);
   $('ptTot').textContent = eur.format(p.totale);
   $('ptNota').textContent = p.crediti > 0 ? `Crediti aperti ${eur.format(p.crediti)}: soldi che altri ti devono, non sono nel patrimonio` : '';
   $('ptAvvisi').innerHTML = (p.senzaSaldo.length ? `<p class="stato err">Senza saldo iniziale: ${p.senzaSaldo.map(esc).join(', ')}. Il saldo conta solo i movimenti registrati, quindi il patrimonio è parziale (Configurazione, Saldo iniziale).</p>` : '')
@@ -1267,7 +1258,8 @@ function renderPatrimonio() {
     : c.quota != null ? `saldo del conto ${eur.format(c.saldo)} · tua quota ${c.quota}%` : '';
   $('ptComp').innerHTML = p.componenti.map(c => `<div class="riga"><span class="nome">${esc(c.nome)}</span><span class="res">${eur.format(c.importo)}</span>${det(c) ? `<span class="det">${det(c)}</span>` : ''}</div>`).join('')
     + `<div class="riga totale"><span class="nome">Totale</span><span class="res">${eur.format(p.totale)}</span></div>
-    <p class="stato">I salvadanai e il fondo emergenze sono già dentro i conti: non si sommano di nuovo. Un giroconto tra conti non cambia il totale.</p>`;
+    <p class="stato">I salvadanai e il fondo emergenze sono già dentro i conti: non si sommano di nuovo. Un giroconto tra conti non cambia il totale.</p>`
+    + (cred.length ? `<h3>Crediti aperti</h3>` + cred.map(c => `<div class="riga"><span class="nome">${esc(c.n || c.c || 'Credito')} · ${dataIt(c.d)}</span><span class="res">${eur.format(c.residuo)}</span><span class="det">iniziale ${eur.format(c.importo)} · rimborsato ${eur.format(c.rimborsato)}</span></div>`).join('') : '');
   const serie = patrimonioSerie(st.mesi, st.cfg, oggi), ultimi = serie.slice(-24);
   $('ptSerieNota').textContent = serie.some(x => x.parziale) ? '* parziale: manca il saldo iniziale di un conto' : '';
   $('ptSerie').innerHTML = !serie.length ? '<p class="vuoto">Serve almeno un movimento per disegnare l\'andamento.</p>' : grafico(ultimi)
@@ -1300,6 +1292,7 @@ function pagina() {
   if (p === '#conti') renderConti();
   if (p === '#chiusura') renderChiusura();
   if (p === '#patrimonio') renderPatrimonio();
+  if (p === '#config') renderAzzera();
   for (const a of $('menu').querySelectorAll('a')) a.hash === p ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
 }
 addEventListener('hashchange', pagina); pagina();

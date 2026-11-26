@@ -5,8 +5,8 @@ Fonti: `docs/visione.md`, `docs/strategia-2027.md` (privati, con le cifre). Voca
 ## Decisioni di impianto
 
 - Si evolve il progetto esistente: pagina statica, login Google, Firestore con cache offline, `logic.js` pura con test.
-- Il nuovo modello sostituisce il vecchio nelle stesse collezioni. Nessun backup di Firestore: fino alla migrazione finale i dati sono una copia di prova del foglio "Budgeting 26".
-- La migrazione è **ripetibile**: cancella i dati importati e di prova e reimporta dal foglio nel nuovo formato. La migrazione finale la segnala l'utente (può essere prima del 31 dicembre).
+- Il nuovo modello sostituisce il vecchio nelle stesse collezioni. Nessun backup di Firestore finché i dati sono di prova; dopo l'avvio da zero si fa un backup prima di cambiare il formato.
+- **Nessuna migrazione dal foglio** (decisione del 26/11/2026): a gennaio 2027 si parte da zero, senza storico. Vedi "Avvio senza storico". Il giorno lo decide l'utente (al più tardi il 31 dicembre).
 - Nessuna categoria nuova oltre a quelle decise (vedi "Categorie").
 
 ## Modello dati (Firestore)
@@ -53,7 +53,7 @@ Regole: un movimento sul Joint ha `u` intero e `p = u × q`. Una spesa divisa co
 - `chiusure`: mappa `{<YYYY-MM>: {d, righe: [{c, tipo, importo, a, coperto}]}}`, un campo di `spese_config/main` (come `piani` e `controlli`, non un documento a parte). Una chiusura del mese (3.3): `d` = data in cui è stata fatta; ogni riga è una categoria di spesa con avanzo (`tipo: 'avanzo'`) o sforo (`'sforo'`), `importo` = differenza assoluta, `a` = scelta ('' = avanzo che resta sul conto come risparmio, sforo non coperto). Avanzo: `a` è un salvadanaio e gli va `importo − coperto`; `coperto` = quanto di quell'avanzo ha coperto altri sfori. Sforo: `a` è un salvadanaio (gli si toglie `coperto`) o una busta con `taglio` e avanzo nello stesso mese (il suo avanzo cala di `coperto`); `importo − coperto` = scoperto. Non scrive movimenti: il saldo di un salvadanaio legge le righe (`saldoSalvadanaio(mesi, sv, ym, chiusure)`) dal mese della chiusura in poi. Un mese si chiude una volta; si riapre (cancella la chiusura) solo finché il mese dopo non è chiuso.
 - `revisioni`: data e decisioni di ogni revisione dei conti.
 
-I vecchi campi `gruppi`, `colori` e `budget` annuale vengono ignorati e rimossi dalla migrazione.
+I vecchi campi `gruppi`, `colori` e `budget` annuale vengono ignorati.
 
 ## Categorie, etichette, conti
 
@@ -74,7 +74,7 @@ I vecchi campi `gruppi`, `colori` e `budget` annuale vengono ignorati e rimossi 
 6. **Salvadanaio**: saldo = saldo iniziale + quote mensili accumulate − spese con quella `c`. Mai sotto zero: una spesa che supera il saldo chiede quale altra busta copre la differenza. Eccezione (R5): un salvadanaio con `sottoZero` (il Fondo TCG) può andare sotto zero; il saldo negativo si mostra come "da recuperare" e il suggerimento delle vendite di carte dice quanto manca per tornare a zero.
 7. **Quota di una voce**: `importo ÷ mesi mancanti alla data`; dopo il pagamento si ricalcola sul nuovo ciclo (per esempio ogni 24 mesi). Una voce può avere una quota che cambia a una data.
 8. **Quota del Joint**: vale quella con `da` più recente non successiva alla data del movimento. Si salva in `q` e non si ricalcola sui movimenti passati.
-9. **Credito**: `u − p` di una spesa divisa. Resta aperto finché un rimborso (`t: rb`, `r: id`) lo chiude. Non entra in budget né spendibile.
+9. **Credito**: `u − p` di una spesa divisa, oppure un prestito (`t: cr`, importo `u`). Una spesa divisa si chiude con un rimborso (`t: rb`, `r: id`). Un prestito si chiude quando la somma dei suoi rimborsi arriva all'importo: i rimborsi parziali sono ammessi e un rimborso che supera il residuo è rifiutato. **Credito iniziale** = prestito senza conto (`k` vuoto): non muove nessun saldo di conto. I crediti aperti si vedono nella pagina Patrimonio con importo iniziale, rimborsato e residuo, fuori dal totale. Non entrano in budget né spendibile.
 10. **Entrata per categoria** (R3, sostituisce l'entrata extra): solo un'entrata in una categoria con `finanzia` (lo stipendio) è del mese (`meseCalc.stipendio`, informativo: lo spendibile resta la somma dei residui). Un'entrata in qualsiasi altra categoria di entrata non tocca il mese, non entra in `meseCalc`, spendibile o piano; alla registrazione propone una destinazione (categoria Vendita carte o etichetta TCG → fondo TCG; sotto una soglia → cuscinetto; sopra → fondo emergenze se toccato, salvadanai in ammanco rispetto al piano (R7), livello 3-5 anni, cuscinetto). L'utente decide e salva `b`; il saldo del salvadanaio con quel nome cresce.
 11. **Patrimonio** = saldi di tutti i conti, con il Joint alla mia quota, dove il conto investimenti conta per il suo ultimo valore inserito al posto del saldo contabile (il saldo finché non c'è un valore; una sola riga, nessun doppio conteggio). Il fondo emergenze è un conto come gli altri. Nei conti non entra mai il versamento della compagna come mio.
 12. **Posso permettermelo?**: data una spesa ipotetica e una categoria, dice se il residuo basta. Se no, elenca le buste da cui prendere, in ordine di `taglio` (prima le non necessarie con numero più basso).
@@ -101,24 +101,17 @@ Stesse funzioni su telefono e PC. Sul telefono, un solo flusso veloce per regist
 - **Revisione dei conti** (ogni 3 mesi: fine marzo, fine giugno, fine settembre, fine dicembre): schermata con i numeri veri e un campo per registrare le decisioni.
 - **TCG:** saldo dell'etichetta (somma di entrate meno uscite dei movimenti con l'etichetta TCG, senza valore di magazzino) e fondo TCG.
 
-## Migrazione del 2026 dal foglio
+## Avvio senza storico
 
-Script ripetibile (nello stesso stile dell'import attuale, file locale in `dati/`, mai nel repository):
+A gennaio 2027 si parte da zero: il 2026 non si importa e il foglio "Budgeting 26" resta in sola lettura come archivio. Nel giorno scelto dall'utente (al più tardi il 31 dicembre 2026):
 
-1. Cancella i movimenti dei mesi 2026 e la configurazione precedente (dati di prova inclusi).
-2. Mappa le categorie del foglio:
-   - Spesa casa e Spesa cibo → Spesa cibo e casa; Hobby, Eventi, Shopping, Vestiti → Shopping & Svago, con il nome vecchio come etichetta; Parrucchiere e Spesa self care → Self care; Medicine e Visite salute → Salute; Manutenzione Auto, Parcheggi, Multe → Auto variabili, con etichetta; Assicurazione auto e Bollo auto → Auto fissi, come voci; Animali resta Animali; Bollette resta Bollette.
-   - Compravendita, Tornei TCG, Judge, Judge Venezia, Judge Lucca, Torneo Londra, OP17 Anniversary, Viaggio Barcellona → TCG, con il nome vecchio come etichetta.
-   - Stipendio → entrata nella categoria Stipendio (`finanzia`). Rimborso assicurazione, Referral Revolut, Rimborso papa auto → entrata in Rimborsi (o Altro), non stipendio. Compravendita incassi → entrata in Vendita carte. Le categorie di entrata (Stipendio, Tredicesima, Rimborsi, Vendita carte, Altro) esistono già nella configurazione iniziale (R3).
-   - Prestiti → credito. Investimenti e PAC mensile → uscite nella categoria Investimenti.
-   - Viaggio Jap, Vacanze, Trasloco, Tatuaggio Lione, Documenti, Check Money, Offerte cucci → categorie archiviate, senza modifiche.
-3. Giroconti a due righe → una riga (`k` → `a`).
-4. Spese Joint già al 56% → importo intero (`u`), `p` = la parte, `q` = 56 (la quota in vigore nel 2026).
-5. Righe senza conto: elencate in un rapporto, non importate in silenzio.
-6. Conto Padel: lo importa com'è, `chiuso`.
-7. Stampa un rapporto di quadratura (totale per mese e per conto prima e dopo, senza stampare le righe).
+1. **Azzera i dati di prova** (Configurazione → Dati): cancella i movimenti di tutti i mesi e, con le caselle attive di default, i controlli dei saldi, le chiusure e i piani del mese. Mostra quanti mesi e movimenti spariscono e chiede di scrivere AZZERA. Non tocca mai categorie, conti, salvadanai, quota Joint, soglie, obiettivi, voci, fondo emergenze né investimenti.
+2. **Carica la configurazione** (`dati/config-2027.json`, Configurazione → Dati).
+3. **Saldi iniziali al 1/1/2027** di tutti i conti, dai saldi veri delle app della banca (compresi TradeRepublic Fondo e TradeRepublic Investimenti); il valore degli investimenti nella pagina Conti.
+4. **Un solo credito iniziale**: il credito residuo verso la compagna, senza dettaglio per spesa, come credito senza conto con l'importo del giorno.
+5. **Primo controllo saldi** nella pagina Conti: banca e strumento devono coincidere.
 
-I dati del foglio non vanno mai nel repository e non vanno stampati.
+I dati veri non vanno mai nel repository e non vanno stampati.
 
 ## Fuori specifica (per ora)
 

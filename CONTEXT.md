@@ -21,7 +21,8 @@ Termini dello strumento, in italiano. Gli stessi nomi vanno usati nel codice e n
 - **Salvadanaio**: riceve una quota mensile e accumula. Non va mai sotto zero (eccezione: il Fondo TCG, che può scendere sotto zero: soldi da recuperare con le prossime vendite di carte). Vive in un conto, anche nel Joint.
 - **Voce** (di un salvadanaio): importo annuale con data (assicurazione, bollo...). La quota mensile è la somma delle voci; il saldo è uno solo.
 - **Quota mensile**: quanto entra ogni mese. Si calcola da obiettivo e data, e può cambiare a una data programmata.
-- **Saldo iniziale**: saldo di partenza a una data.
+- **Saldo iniziale**: saldo di partenza a una data (al 1/1/2027, dai saldi veri delle app della banca).
+- **Avvio senza storico**: a gennaio 2027 si parte da zero, senza importare il 2026; il foglio resta in sola lettura come archivio.
 - **Fondo emergenze**: obiettivo fisso, su Trade Republic. Conta nel patrimonio, non nello spendibile. Ogni uso richiede una nota.
 - **Fondo TCG**: salvadanaio alimentato solo dalle entrate con etichetta TCG o nella categoria Vendita carte.
 - **Revisione dei conti**: controllo programmato (fine marzo 2027, poi ogni 3 mesi: fine giugno, fine settembre, fine dicembre) con numeri veri. Registra cosa ho deciso.
@@ -35,7 +36,8 @@ Termini dello strumento, in italiano. Gli stessi nomi vanno usati nel codice e n
 - **Giroconto**: spostamento tra conti, una riga sola, da → a. Fuori da ogni totale.
 - **Categoria di entrata**: categoria per le entrate (Stipendio, Tredicesima, Rimborsi, Vendita carte, Altro). Non ha budget né priorità di taglio. Un'entrata non riduce mai lo speso di una categoria di spesa.
 - **Stipendio che finanzia il mese**: l'unica categoria di entrata con il flag "finanzia il mese". Un'entrata in qualsiasi altra categoria di entrata (l'ex **entrata extra**: tredicesima, rimborsi, vendita carte) non tocca il mese: quando arriva, decido dove va.
-- **Credito**: soldi che qualcuno mi deve. Non è una mia spesa; si chiude al rimborso.
+- **Credito**: soldi che qualcuno mi deve. Non è una mia spesa. Una spesa divisa si chiude con un rimborso; un prestito si chiude quando i rimborsi (anche a rate) arrivano all'importo.
+- **Credito iniziale**: il credito residuo al giorno del passaggio, registrato come credito senza conto (non muove nessun saldo) con importo, data e nota. Non è patrimonio.
 - **Etichetta**: dettaglio dentro una categoria o ambito trasversale (TCG). Mostra quanto pesa; nessun budget proprio.
 
 ## Joint

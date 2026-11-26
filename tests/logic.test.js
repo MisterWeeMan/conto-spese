@@ -1079,28 +1079,6 @@ test('validaConfig: the savings minimum; a leftover magazzinoTCG is ignored with
   assert.strictEqual(L.validaConfig(Object.assign(cfgW(), {risparmioMin: -3})).length, 1);
 });
 
-test('sostituisci2026: replaces the 2026 months, counts what goes and what comes, leaves 2027 alone', () => {
-  const mesi = {'2026-01': {a: {d: '2026-01-05', u: 10}, b: {d: '2026-01-06', u: 5, x: 1}}, '2026-02': {c: {d: '2026-02-01', u: 3}}, '2027-01': {z: {d: '2027-01-02', u: 9}}};
-  const file = {'2026-02': {mov: {n1: {d: '2026-02-03', u: 4}, n2: {d: '2026-02-04', e: 8}}}, '2026-03': {mov: {n3: {d: '2026-03-01', u: 1}}}};
-  const r = L.sostituisci2026(mesi, file);
-  assert.deepStrictEqual(r.errori, []);
-  assert.deepStrictEqual(r.cancella, {mesi: 2, mov: 2});   // the tombstone does not count
-  assert.deepStrictEqual(r.importa, {mesi: 2, mov: 3});
-  assert.deepStrictEqual(Object.keys(r.scritture).sort(), ['2026-01', '2026-02', '2026-03']); // 2026-01 is emptied, 2027 is never written
-  assert.deepStrictEqual(r.scritture['2026-01'], {});
-  assert.deepStrictEqual(Object.keys(r.scritture['2026-02']), ['n1', 'n2']);
-});
-
-test('sostituisci2026 refuses a file that is not only 2026 or has broken rows', () => {
-  const f = (ym, row) => L.sostituisci2026({}, {[ym]: {mov: {a: row}}}).errori.length;
-  assert.ok(f('2027-01', {d: '2027-01-02', u: 1}));          // not a 2026 month
-  assert.ok(f('2026-01', {d: '2026-02-02', u: 1}));          // date outside its month
-  assert.ok(f('2026-01', {d: '2026-01-02', u: -1}));         // negative amount
-  assert.ok(f('2026-01', {d: '2026-01-02', u: 'x'}));        // not a number
-  assert.ok(L.sostituisci2026({}, {}).errori.length);        // empty file
-  assert.strictEqual(f('2026-01', {d: '2026-01-02', e: 5, u: 0}), 0);
-});
-
 test('chiusuraStato: a pot with sottoZero never blocks reopening a month', () => {
   const mesi = {'2026-01': {a: {d: '2026-01-20', u: 90, c: 'Fondo TCG'}}};
   const cfg = {chiusure: {'2026-01': {righe: [{c: 'Svago', tipo: 'avanzo', importo: 50, a: 'Fondo TCG', coperto: 0}]}}, salvadanai: [{nome: 'Fondo TCG', conto: 'A', quota: 0, sottoZero: true, saldoIniziale: {data: '2026-01-01', importo: 0}}]};
@@ -1172,4 +1150,48 @@ test('destinazioneExtra (R7): pots on schedule are skipped, then investments, th
   const inRegola = cfgR7([regali({quota: 20}), svX('Investimenti', 0)]);
   assert.strictEqual(L.destinazioneExtra({}, inRegola, {d: '2027-04-03', e: 200}).b, 'Investimenti');
   assert.strictEqual(L.destinazioneExtra({}, cfgR7([regali({quota: 20})]), {d: '2027-04-03', e: 200}).b, 'Cuscinetto');
+});
+
+// Initial credit and instalment refunds (3.6)
+const iniz = {'2027-01': {c1: {d: '2027-01-01', u: 1000, t: 'cr', n: 'Opening credit'}}, '2027-02': {r1: {d: '2027-02-10', e: 300, t: 'rb', r: 'c1', k: 'Cash'}, r2: {d: '2027-02-20', e: 200, t: 'rb', r: 'c1', k: 'Cash'}}};
+
+test('creditiAperti lists a loan (cr) with initial, refunded and what is left; partial refunds are added up', () => {
+  const r = L.creditiAperti(iniz);
+  assert.deepStrictEqual(r.map(x => [x.id, x.importo, x.rimborsato, x.residuo]), [['c1', 1000, 500, 500]]);
+});
+
+test('creditiAperti: a loan closes only when the refunds reach its amount; a deleted refund reopens it', () => {
+  const m = JSON.parse(JSON.stringify(iniz));
+  m['2027-02'].r2.e = 700;
+  assert.deepStrictEqual(L.creditiAperti(m), []);
+  m['2027-02'].r2.x = 1;
+  assert.strictEqual(L.creditiAperti(m)[0].residuo, 700);
+});
+
+test('creditiAperti: ignoring one movement shows the credit as it was before that refund (editing it)', () => {
+  assert.strictEqual(L.creditiAperti(iniz, 'r2')[0].residuo, 700);
+});
+
+test('creditiAperti: a split expense still closes with any refund (regression of 1.5)', () => {
+  const m = JSON.parse(JSON.stringify(split));
+  m['2027-02'].b1.e = 5;
+  assert.deepStrictEqual(L.creditiAperti(m).map(x => x.id), ['b2']);
+  assert.strictEqual(L.creditiAperti(m)[0].tipo, 'sp');
+});
+
+test('saldi: an initial credit without account moves no account balance and leaves no blank row', () => {
+  const s = L.saldi(iniz, {conti: [{nome: 'Cash'}]});
+  assert.deepStrictEqual(s, {Cash: 500});
+});
+
+test('azzeraPiano counts months and live movements to delete and the config parts to clear', () => {
+  const mesi = {'2027-01': {a: {d: '2027-01-02', u: 1}, b: {d: '2027-01-03', u: 1, x: 1}}, '2027-02': {c: {d: '2027-02-01', e: 5}}};
+  const cfg = {controlli: [{}, {}], chiusure: {'2027-01': {}}, piani: {'2027-01': {}, '2027-02': {}}, categorie: [{nome: 'A'}]};
+  const r = L.azzeraPiano(mesi, cfg, {controlli: true, chiusure: true, piani: true});
+  assert.deepStrictEqual([r.mesi, r.mov, r.controlli, r.chiusure, r.piani], [2, 2, 2, 1, 2]);
+  assert.deepStrictEqual(r.campi, ['controlli', 'chiusure', 'piani']);
+  assert.deepStrictEqual(r.nomiMesi, ['2027-01', '2027-02']);
+  const n = L.azzeraPiano(mesi, cfg, {controlli: false, chiusure: true, piani: false});
+  assert.deepStrictEqual([n.campi, n.controlli, n.piani], [['chiusure'], 0, 0]);
+  assert.deepStrictEqual(L.azzeraPiano({}, {}, {controlli: true, chiusure: true, piani: true}), {mesi: 0, mov: 0, controlli: 0, chiusure: 0, piani: 0, campi: [], nomiMesi: []});
 });

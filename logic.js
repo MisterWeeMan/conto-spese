@@ -55,17 +55,26 @@
   // Money others owe me on a split expense: u - p in cents, never negative; else 0.
   function credito(m) { return m.p != null && m.u ? Math.max(0, Math.round((m.u - m.p) * 100) / 100) : 0; }
 
-  // Open credits over all months: split expenses (u - p > 0) with no live refund pointing at them (t:'rb', r:id).
-  // shortcut: a refund closes the whole credit, whatever its amount (the spec has no partial refunds); upgrade
-  // by summing the refunds' e against `residuo` when partial refunds are needed. Loans (t:'cr') are not listed;
-  // a Joint expense (q set) is not either: the rest of it is the partner's share, already paid from the Joint account.
-  function creditiAperti(mesi) {
-    var all = [], chiusi = {};
+  // Open credits over all months, oldest first: split expenses (u - p > 0, tipo 'sp') and loans (t:'cr', tipo 'cr': the amount is u; the initial
+  // credit has no account). Live refunds (t:'rb', r: id) point at them. A loan is open until its refunds add up to its amount (partial refunds
+  // allowed); a split expense is closed by any live refund (shortcut: the spec has no partial refunds for them). A Joint expense (q set) is not a
+  // credit: the rest of it is the partner's share, already paid from the Joint account. escludi (optional movement id) is left out of the
+  // refunds, to show a credit as it was before the refund being edited.
+  function creditiAperti(mesi, escludi) {
+    var all = [], rimb = {};
     Object.keys(mesi).sort().forEach(function (ym) {
-      movs(mesi, ym).forEach(function (m) { if (m.t === 'rb' && m.r) chiusi[m.r] = 1; else all.push(m); });
+      movs(mesi, ym).forEach(function (m) {
+        if (m.t === 'rb' && m.r) { if (m.id !== escludi) rimb[m.r] = Math.round(((rimb[m.r] || 0) + (m.e || 0)) * 100) / 100; } else all.push(m);
+      });
     });
-    return all.filter(function (m) { return !chiusi[m.id] && m.q == null && credito(m) > 0; })
-      .map(function (m) { return {id: m.id, d: m.d, c: m.c, k: m.k, n: m.n, residuo: credito(m)}; });
+    var out = [];
+    all.forEach(function (m) {
+      var cr = m.t === 'cr', importo = cr ? m.u || 0 : m.q == null ? credito(m) : 0, r = rimb[m.id];
+      if (!(importo > 0) || (!cr && r !== undefined)) return;
+      var resta = Math.round((importo - (r || 0)) * 100) / 100;
+      if (resta > 0) out.push({id: m.id, d: m.d, c: m.c, k: m.k, n: m.n, tipo: cr ? 'cr' : 'sp', importo: importo, rimborsato: r || 0, residuo: resta});
+    });
+    return out;
   }
 
   // "TCG, Torneo,, tcg" -> ['TCG', 'Torneo']: trimmed, no empties, repeats ignoring case dropped
@@ -207,34 +216,26 @@
     Object.keys(mesi).forEach(function (ym) {
       movs(mesi, ym).forEach(function (m) {
         if (finoA && m.d > finoA) return;
+        if (m.t === 'cr' && !m.k) return; // initial credit: no account
         if (m.t === 'g') { add(m.k, -(m.u || 0), m.d); add(m.a, m.u || 0, m.d); } else add(m.k, net(m), m.d);
       });
     });
     return s;
   }
 
-  // "Replace the 2026" import (3.5): file = {'2026-MM': {mov: {id: row}}} replaces every 2026 month present now (rows, tombstones and test data).
-  // -> {errori, cancella: {mesi, mov}, importa: {mesi, mov}, scritture: {ym: mov}}. scritture is what to write, whole documents: a 2026 month
-  // that is not in the file gets {} (emptied); other years are never listed. cancella counts live movements only. The file is checked first.
-  function sostituisci2026(mesi, file) {
-    var errori = [], importa = {mesi: 0, mov: 0}, cancella = {mesi: 0, mov: 0}, scritture = {}, num = function (x) { return x === undefined || (typeof x === 'number' && isFinite(x) && x >= 0); };
-    Object.keys(file || {}).forEach(function (ym) {
-      var mov = file[ym] && file[ym].mov;
-      if (!/^2026-(0[1-9]|1[0-2])$/.test(ym)) { errori.push('Il mese ' + ym + ' non è del 2026'); return; }
-      if (!mov || typeof mov !== 'object') { errori.push('Il mese ' + ym + ' non ha movimenti'); return; }
-      Object.keys(mov).forEach(function (id) {
-        var r = mov[id];
-        if (!r || typeof r.d !== 'string' || r.d.slice(0, 7) !== ym || !num(r.e) || !num(r.u)) errori.push('Movimento ' + id + ' del ' + ym + ' non valido');
-      });
-      scritture[ym] = mov; importa.mesi++; importa.mov += Object.keys(mov).length;
+  // "Azzera i dati di prova" (3.6): what a reset would delete. opz = {controlli, chiusure, piani} (which config parts to clear).
+  // -> {mesi: month documents, mov: live movements, controlli/chiusure/piani: entries cleared (0 if not chosen), campi: config fields to delete, nomiMesi}.
+  // Never lists categories, accounts, pots, Joint share, thresholds, goals, voci, emergency fund or investments: they are not touched.
+  function azzeraPiano(mesi, cfg, opz) {
+    var r = {mesi: 0, mov: 0, controlli: 0, chiusure: 0, piani: 0, campi: [], nomiMesi: Object.keys(mesi || {}).sort()};
+    r.mesi = r.nomiMesi.length;
+    r.nomiMesi.forEach(function (ym) { r.mov += movs(mesi, ym).length; });
+    ['controlli', 'chiusure', 'piani'].forEach(function (f) {
+      var v = cfg && cfg[f];
+      if (!opz || !opz[f] || !v || !Object.keys(v).length) return;
+      r[f] = Object.keys(v).length; r.campi.push(f);
     });
-    if (!importa.mesi && !errori.length) errori.push('Il file non ha movimenti del 2026');
-    if (errori.length) return {errori: errori.slice(0, 5).concat(errori.length > 5 ? ['(+' + (errori.length - 5) + ')'] : []), cancella: cancella, importa: importa, scritture: {}};
-    Object.keys(mesi).filter(function (ym) { return /^2026-/.test(ym); }).forEach(function (ym) {
-      cancella.mesi++; cancella.mov += movs(mesi, ym).length;
-      if (!scritture[ym]) scritture[ym] = {};
-    });
-    return {errori: errori, cancella: cancella, importa: importa, scritture: scritture};
+    return r;
   }
 
   // Bank check (spec 'controlli'): difference = bank balance - tool balance; ok within a cent. No correcting movement is
@@ -738,7 +739,7 @@
     return {stipendio: s.stipendio, pac: p, cuscinetto: cus, viaggi: via, risparmio: tot, tasso: s.stipendio > 0 ? tot / s.stipendio : null, minimo: minimo, sopra: s.stipendio > 0 && tot * 100 >= minimo * s.stipendio};
   }
 
-  var api = {sostituisci2026: sostituisci2026, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, mancaRispettoPiano: mancaRispettoPiano, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {azzeraPiano: azzeraPiano, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, mancaRispettoPiano: mancaRispettoPiano, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();
