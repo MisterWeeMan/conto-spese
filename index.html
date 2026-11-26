@@ -446,7 +446,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2, '0');
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const {chiusuraProposta, chiusuraCalcola, chiusuraStato, chiusuraMancante, saldoSalvadanaio, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota, saldi, differenzaControllo, ultimoControllo, storicoControlli, controlloScaduto, controlliInRitardo, investimenti, patrimonio, patrimonioSerie, riepilogoGruppi, tassoRisparmio} = window.CSLogic;
+const {chiusuraProposta, chiusuraCalcola, chiusuraStato, chiusuraMancante, saldoSalvadanaio, mancaRispettoPiano, quotaSalvadanaio, ammanco, net, rinomina, parseEtichette, etichette, conEtichetta, validaConfig, soglieSuperate, cfgNorm, quotaMov, contoJoint, contiAttivi, categorieAttive, categorieEntrata, creditiAperti, meseCalc, piano, pianoPrecedente, fondoEmergenze, usoFondoSenzaNota, saldi, differenzaControllo, ultimoControllo, storicoControlli, controlloScaduto, controlliInRitardo, investimenti, patrimonio, patrimonioSerie, riepilogoGruppi, tassoRisparmio} = window.CSLogic;
 const {validaImporto, validaQuotaJoint} = window.CSLogic;
 const movs = ym => window.CSLogic.movs(st.mesi, ym);
 
@@ -960,9 +960,9 @@ const nomeMeseOggi = () => todayISO().slice(0, 7);
 function renderSv(pots) {
   const oggi = nomeMeseOggi();
   $('svConta').textContent = `saldo a fine ${new Date(+oggi.slice(0, 4), +oggi.slice(5) - 1, 1).toLocaleDateString('it-IT', {month: 'long'})}`;
-  $('svLista').innerHTML = pots.length ? [...pots].sort((a, b) => a.nome.localeCompare(b.nome, 'it')).map(v => { const s = saldoSalvadanaio(st.mesi, v, oggi, st.cfg.chiusure), da = v.sottoZero && s < -0.005; return `<button type="button" class="mov cat${st.svEdit === v.nome ? ' sel' : ''}" data-sv="${esc(v.nome)}">
+  $('svLista').innerHTML = pots.length ? [...pots].sort((a, b) => a.nome.localeCompare(b.nome, 'it')).map(v => { const s = saldoSalvadanaio(st.mesi, v, oggi, st.cfg.chiusure), da = v.sottoZero && s < -0.005, ritardo = mancaRispettoPiano(st.mesi, v, oggi, {emergenze: st.cfg.extra?.emergenze || 'Fondo emergenze'}, st.cfg.fondoEmergenze?.obiettivo, s); return `<button type="button" class="mov cat${st.svEdit === v.nome ? ' sel' : ''}" data-sv="${esc(v.nome)}">
     <span class="n">${esc(v.nome)}</span><span class="a"${da ? ' style="color:var(--warn)"' : ''}>${da ? `da recuperare ${eur.format(-s)}` : eur.format(s)}</span>
-    <span class="s">${esc(v.gruppo || 'Senza gruppo')} · ${esc(v.conto || 'senza conto')} · quota ${eur.format(quotaSalvadanaio(v, oggi))}/mese${v.voci?.length ? ` · ${v.voci.length} voci` : ''}</span></button>`; }).join('')
+    <span class="s">${esc(v.gruppo || 'Senza gruppo')} · ${esc(v.conto || 'senza conto')} · quota ${eur.format(quotaSalvadanaio(v, oggi))}/mese${v.voci?.length ? ` · ${v.voci.length} voci` : ''}</span>${ritardo > 0.005 ? `<span class="s" style="color:var(--warn)">manca ${eur.format(ritardo)} rispetto al piano</span>` : ''}</button>`; }).join('')
     : '<p class="vuoto">Nessun salvadanaio. Aggiungi il primo dal modulo.</p>';
   const conti = [...new Set([...contiAttivi(st.cfg).map(c => c.nome), svEditConto])].filter(Boolean);
   const v = $('svConto').value;

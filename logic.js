@@ -344,12 +344,18 @@
   // shortcut: the cycle follows the calendar only; a payment made early or late does not move it. Upgrade if it matters.
   function quotaVoce(v, ym, apertura) {
     var idx = function (s) { return +s.slice(0, 4) * 12 + +s.slice(5, 7) - 1; }, r = function (x) { return Math.round(x * 100) / 100; };
-    var y = idx(ym);
-    if (!/^\d{4}-\d{2}/.test(v.data || '')) return 0; // a voce without a valid month saves nothing, rather than NaN everywhere
+    var y = idx(ym), cy = cicloVoce(v, ym, apertura);
+    if (!cy) return 0; // a voce without a valid month saves nothing, rather than NaN everywhere
     if (v.cambio && y >= idx(v.cambio.da)) return v.cambio.quota;
-    var c = v.cicli || 12, d0 = idx(v.data), i = y <= d0 ? 0 : Math.ceil((y - d0) / c), due = d0 + i * c;
-    var s = Math.max(due - c + 1, apertura ? idx(apertura) : -Infinity), n = due - s + 1, k = y - s + 1;
+    var n = cy.due - cy.s + 1, k = y - cy.s + 1;
     return k < 1 ? 0 : r(r(v.annuale * k / n) - r(v.annuale * (k - 1) / n));
+  }
+  // Cycle of voce v that contains month ym: {s, due} as month indexes (year x 12 + month - 1), null without a valid due month.
+  function cicloVoce(v, ym, apertura) {
+    var idx = function (s) { return +s.slice(0, 4) * 12 + +s.slice(5, 7) - 1; };
+    if (!/^\d{4}-\d{2}/.test(v.data || '')) return null;
+    var y = idx(ym), c = v.cicli || 12, d0 = idx(v.data), due = d0 + (y <= d0 ? 0 : Math.ceil((y - d0) / c)) * c;
+    return {s: Math.max(due - c + 1, apertura ? idx(apertura) : -Infinity), due: due};
   }
 
   // Monthly quota of pot sv in month ym: the sum of its voci, or the fixed sv.quota when it has none.
@@ -387,6 +393,27 @@
       });
     });
     return Math.round(tot * 100) / 100;
+  }
+
+  // R7: how far pot sv is behind its plan at the end of month ym, in euro (0 when on schedule). Matured need = for a pot with voci,
+  // the quotas of every voce from the start of its current cycle up to ym (0 for a voce already paid in the cycle: an expense with v =
+  // its name); for a pot with only a goal, obiettivo x month of the year / 12; for the emergency pot (extra.emergenze) the whole goal
+  // (obiettivoFondo, else its own). A sottoZero pot is out (a negative balance is "da recuperare"). saldo = balance override.
+  // shortcut: the cycle follows the calendar (as quotaVoce) and a due month passed unpaid is forgotten; upgrade if a late payment
+  // must keep the voce short.
+  // shortcut: a goal-only pot is prorated on the calendar year even if it was opened mid-year; set the opening balance accordingly.
+  function mancaRispettoPiano(mesi, sv, ym, extra, obiettivoFondo, saldo) {
+    if (sv.sottoZero) return 0;
+    var need = 0, ap = sv.saldoIniziale && sv.saldoIniziale.data.slice(0, 7);
+    var idx = function (s) { return +s.slice(0, 4) * 12 + +s.slice(5, 7) - 1; }, y = idx(ym);
+    if (extra && sv.nome === extra.emergenze) need = obiettivoFondo > 0 ? obiettivoFondo : sv.obiettivo || 0;
+    else if (sv.voci && sv.voci.length) sv.voci.forEach(function (v) {
+      var c = cicloVoce(v, ym, ap);
+      if (!c || Object.keys(mesi).some(function (k) { return movs(mesi, k).some(function (m) { return m.c === sv.nome && m.v === v.nome && m.u && idx(m.d) >= c.s && idx(m.d) <= y; }); })) return;
+      for (var k = c.s; k <= y; k++) need += quotaVoce(v, meseDelta(ym, k - y), ap);
+    });
+    else if (sv.obiettivo > 0) need = sv.obiettivo * +ym.slice(5, 7) / 12;
+    return Math.max(0, Math.round((need - (saldo !== undefined ? saldo : saldoSalvadanaio(mesi, sv, ym))) * 100) / 100);
   }
 
   // ym shifted by n months ('2026-01', -1 → '2025-12').
@@ -475,17 +502,16 @@
 
   // Suggested destination (b) of an extra income m {d, e, l?}: {b, motivo}. It only proposes, the user chooses. Names and threshold
   // come from cfg.extra {soglia: 100, carte, cuscinetto, emergenze, investimenti, tcg}. Card sales (label TCG or category cfg.extra.carte, default 'Vendita carte') go to the TCG fund; below
-  // the threshold the buffer; from it up: the emergency fund if below its sv.obiettivo, the pot furthest below its obiettivo,
-  // the investments pot, the buffer. Pots are skipped when missing from cfg.salvadanai.
-  // shortcut: "in ammanco" = balance under the optional sv.obiettivo of the pot (the plan has no other "expected" figure),
-  // and "touched" = emergency fund under its obiettivo; the buffer is only a name (not a pot), so its residual does not grow.
+  // the threshold the buffer; from it up: the emergency fund if below its sv.obiettivo, the pot furthest behind its plan
+  // (mancaRispettoPiano, R7), the investments pot, the buffer. Pots are skipped when missing from cfg.salvadanai.
+  // shortcut: "touched" = emergency fund under its obiettivo; the buffer is only a name (not a pot), so its residual does not grow.
   function destinazioneExtra(mesi, cfg, m) {
     var x = Object.assign({soglia: 100, cuscinetto: 'Cuscinetto', emergenze: 'Fondo emergenze', investimenti: 'Investimenti', tcg: 'Fondo TCG', carte: 'Vendita carte'}, cfg.extra);
     var pots = cfg.salvadanai || [], ym = m.d.slice(0, 7);
     var ha = function (n) { return pots.some(function (v) { return v.nome === n; }); };
     var fe = cfg.fondoEmergenze || {}; // the fund goal set in 2.7 wins over the pot's own obiettivo
     // shortcut: the fund is an account (R6); this step applies only if a pot named cfg.extra.emergenze exists, whose goal and balance are then the fund's.
-    var manca = function (v) { var o = v.nome === x.emergenze && fe.obiettivo > 0 ? fe.obiettivo : v.obiettivo; var f = v.nome === x.emergenze && fondoEmergenze(mesi, cfg, ym); return o > 0 ? o - (f ? f.saldo : saldoSalvadanaio(mesi, v, ym, cfg.chiusure)) : 0; };
+    var manca = function (v) { var f = v.nome === x.emergenze && fondoEmergenze(mesi, cfg, ym); return mancaRispettoPiano(mesi, v, ym, x, fe.obiettivo, f ? f.saldo : saldoSalvadanaio(mesi, v, ym, cfg.chiusure)); };
     if (((m.l || []).some(function (l) { return String(l).toLowerCase() === 'tcg'; }) || (m.c && m.c === x.carte)) && ha(x.tcg)) {
       var neg = -saldoSalvadanaio(mesi, pots.find(function (v) { return v.nome === x.tcg; }), ym, cfg.chiusure);
       return {b: x.tcg, motivo: 'Vendita di carte: va al fondo TCG' + (neg > 0.005 ? '; al fondo mancano ' + neg.toFixed(2).replace('.', ',') + ' € per tornare a zero' : '')};
@@ -495,7 +521,7 @@
     if (em && manca(em) > 0.005) return {b: em.nome, motivo: 'Il fondo emergenze è sotto il suo obiettivo'};
     var corto = pots.filter(function (v) { return (!em || v.nome !== em.nome) && manca(v) > 0.005; })
       .sort(function (a, b) { return manca(b) - manca(a); })[0];
-    if (corto) return {b: corto.nome, motivo: 'Salvadanaio in ammanco rispetto al suo obiettivo'};
+    if (corto) return {b: corto.nome, motivo: 'Salvadanaio in ammanco: mancano ' + manca(corto).toFixed(2).replace('.', ',') + ' € rispetto al piano'};
     if (ha(x.investimenti)) return {b: x.investimenti, motivo: 'Niente da rimettere a posto: livello 3-5 anni'};
     return {b: x.cuscinetto, motivo: 'Nessun altro posto: nel cuscinetto'};
   }
@@ -712,7 +738,7 @@
     return {stipendio: s.stipendio, pac: p, cuscinetto: cus, viaggi: via, risparmio: tot, tasso: s.stipendio > 0 ? tot / s.stipendio : null, minimo: minimo, sopra: s.stipendio > 0 && tot * 100 >= minimo * s.stipendio};
   }
 
-  var api = {sostituisci2026: sostituisci2026, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
+  var api = {sostituisci2026: sostituisci2026, patrimonio: patrimonio, patrimonioSerie: patrimonioSerie, riepilogoGruppi: riepilogoGruppi, tassoRisparmio: tassoRisparmio, meseDelta: meseDelta, chiusuraProposta: chiusuraProposta, chiusuraCalcola: chiusuraCalcola, chiusuraStato: chiusuraStato, chiusuraMancante: chiusuraMancante, riordinaTaglio: riordinaTaglio, parseAmount: parseAmount, validaImporto: validaImporto, validaQuotaJoint: validaQuotaJoint, movs: movs, net: net, mia: mia, credito: credito, creditiAperti: creditiAperti, parseEtichette: parseEtichette, etichette: etichette, conEtichetta: conEtichetta, quotaJoint: quotaJoint, quotaMov: quotaMov, contoJoint: contoJoint, cfgNorm: cfgNorm, validaConfig: validaConfig, contiAttivi: contiAttivi, categorieAttive: categorieAttive, categorieEntrata: categorieEntrata, finanziaMese: finanziaMese, saldi: saldi, investimenti: investimenti, giorniTra: giorniTra, differenzaControllo: differenzaControllo, ultimoControllo: ultimoControllo, storicoControlli: storicoControlli, controlloScaduto: controlloScaduto, controlliInRitardo: controlliInRitardo, meseCalc: meseCalc, quotaVoce: quotaVoce, mancaRispettoPiano: mancaRispettoPiano, quotaSalvadanaio: quotaSalvadanaio, piano: piano, pianoPrecedente: pianoPrecedente, saldoSalvadanaio: saldoSalvadanaio, fondoEmergenze: fondoEmergenze, usoFondoSenzaNota: usoFondoSenzaNota, destinazioneExtra: destinazioneExtra, ammanco: ammanco, soglieSuperate: soglieSuperate, permettermelo: permettermelo, categorie: categorie, rinomina: rinomina};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.CSLogic = api;
 })();

@@ -575,7 +575,7 @@ test('destinazioneExtra: from the threshold up, the emergency fund first if belo
 
 test('destinazioneExtra: emergency fund full -> the pot furthest below its goal, then investments, then the buffer', () => {
   const pieno = {salvadanai: cfgX.salvadanai.map(v => v.nome === 'Fondo emergenze' ? svX(v.nome, 1000, 1000) : v)};
-  assert.strictEqual(L.destinazioneExtra({}, pieno, {d: '2027-02-03', e: 200}).b, 'Auto'); // short 250 vs Viaggi 210
+  assert.strictEqual(L.destinazioneExtra({}, pieno, {d: '2027-12-03', e: 200}).b, 'Auto'); // by December the goals are fully due: short 250 vs Viaggi 210
   const senzaObiettivi = {salvadanai: [svX('Auto', 150), svX('Investimenti', 0)]};
   assert.strictEqual(L.destinazioneExtra({}, senzaObiettivi, {d: '2027-02-03', e: 200}).b, 'Investimenti');
   assert.strictEqual(L.destinazioneExtra({}, {salvadanai: [svX('Auto', 150)]}, {d: '2027-02-03', e: 200}).b, 'Cuscinetto');
@@ -584,7 +584,7 @@ test('destinazioneExtra: emergency fund full -> the pot furthest below its goal,
 
 test('destinazioneExtra: the balance used is the one at the movement month, extra income already received counts', () => {
   const mesi = {'2027-01': {a: {d: '2027-01-10', e: 300, t: 'x2', b: 'Fondo emergenze'}}}; // 800 + 300 >= 1000
-  assert.strictEqual(L.destinazioneExtra(mesi, cfgX, {d: '2027-02-03', e: 150}).b, 'Auto');
+  assert.strictEqual(L.destinazioneExtra(mesi, cfgX, {d: '2027-12-03', e: 150}).b, 'Auto');
 });
 
 test('destinazioneExtra: a card sale (label TCG) always goes to the TCG fund, even below the threshold', () => {
@@ -1113,4 +1113,63 @@ test('tassoRisparmio: a transfer from the fund account to the investments accoun
   const cfg = {...cfgG(), conti: [{nome: 'Banca'}, {nome: 'Fondo'}, {nome: 'Broker'}]};
   const mesi = mesiG(); mesi['2026-02'].h = {d: '2026-02-15', u: 30, k: 'Fondo', a: 'Broker', t: 'g'};
   assert.strictEqual(L.tassoRisparmio(mesi, cfg, '2026-02').pac, 80); // 50 from the bank + 30 from the fund
+});
+
+// --- R7: "in ammanco" = balance under what the plan has matured by now (invented data) ---
+const cfgR7 = salv => ({salvadanai: salv});
+const regali = (extra) => ({nome: 'Regali', conto: 'A', quota: 10, obiettivo: 240, saldoIniziale: {data: '2027-01-01', importo: 0}, ...extra});
+
+test('mancaRispettoPiano: a pot with a fixed quota and a goal matures goal x months of the year / 12', () => {
+  assert.strictEqual(L.mancaRispettoPiano({}, regali({quota: 20}), '2027-04'), 0);   // balance 80, matured 80
+  assert.strictEqual(L.mancaRispettoPiano({}, regali(), '2027-04'), 40);             // balance 40, matured 80: late
+  assert.strictEqual(L.mancaRispettoPiano({}, regali(), '2027-12'), 120);            // by December the whole goal
+  assert.strictEqual(L.mancaRispettoPiano({}, regali({obiettivo: undefined}), '2027-04'), 0); // no goal, no voci: nothing to miss
+});
+
+test('mancaRispettoPiano: just filled by an extra income, it is no longer short', () => {
+  const mesi = {'2027-03': {a: {d: '2027-03-10', e: 40, t: 'x2', b: 'Regali'}}};
+  assert.strictEqual(L.mancaRispettoPiano(mesi, regali(), '2027-04'), 0);
+  const poco = {'2027-03': {a: {d: '2027-03-10', e: 25, t: 'x2', b: 'Regali'}}};
+  assert.strictEqual(L.mancaRispettoPiano(poco, regali(), '2027-04'), 15);
+});
+
+test('mancaRispettoPiano with voci: matured part of every voce of the current cycle', () => {
+  const bollo = {nome: 'Bollo', annuale: 200, data: '2027-09'}, tagliando = {nome: 'Tagliando', annuale: 90, data: '2027-12'};
+  const sv = svV([bollo, tagliando]);
+  assert.strictEqual(L.mancaRispettoPiano({}, sv, '2027-04'), 0); // quotas accrued on schedule
+  const spesa = {'2027-03': {a: {d: '2027-03-05', u: 50, c: 'Auto'}}};
+  assert.strictEqual(L.mancaRispettoPiano(spesa, sv, '2027-04'), 50); // an unrelated expense leaves the pot behind
+});
+
+test('mancaRispettoPiano with voci: a voce already paid in the cycle contributes nothing', () => {
+  const bollo = {nome: 'Bollo', annuale: 200, data: '2027-09'};
+  const pagato = {'2027-03': {a: {d: '2027-03-05', u: 50, c: 'Auto', v: 'Bollo'}}};
+  assert.strictEqual(L.mancaRispettoPiano(pagato, svV([bollo]), '2027-04'), 0);
+  const altra = {'2027-03': {a: {d: '2027-03-05', u: 50, c: 'Auto', v: 'Altro'}}}; // another voce: Bollo is not paid
+  assert.strictEqual(L.mancaRispettoPiano(altra, svV([bollo]), '2027-04'), 50);
+});
+
+test('mancaRispettoPiano with voci: after the due month the next cycle starts from zero', () => {
+  const rin = {nome: 'Revisione', annuale: 80, data: '2027-09', cicli: 24};
+  const speso = {'2027-09': {a: {d: '2027-09-10', u: 80, c: 'Auto'}}}; // the 80 left the pot at the due date, a new cycle starts
+  assert.strictEqual(L.mancaRispettoPiano(speso, svV([rin]), '2027-10'), 0); // matured 3.33 = balance 3.33 (the old cycle would say 80)
+});
+
+test('mancaRispettoPiano: the emergency fund needs its whole goal at any time; a sottoZero pot is out', () => {
+  const fe = {nome: 'Fondo emergenze', conto: 'A', quota: 0, obiettivo: 1000, saldoIniziale: {data: '2027-01-01', importo: 800}};
+  assert.strictEqual(L.mancaRispettoPiano({}, fe, '2027-01', {emergenze: 'Fondo emergenze'}), 200);
+  assert.strictEqual(L.mancaRispettoPiano({}, {...regali(), sottoZero: true}, '2027-04'), 0);
+});
+
+test('destinazioneExtra (R7): the pot furthest behind its plan wins and the reason says how much is missing', () => {
+  const cfg = cfgR7([regali(), regali({nome: 'Viaggi', quota: 5}), svX('Investimenti', 0)]); // Regali short 40, Viaggi short 60
+  const r = L.destinazioneExtra({}, cfg, {d: '2027-04-03', e: 200});
+  assert.strictEqual(r.b, 'Viaggi');
+  assert.match(r.motivo, /60,00/);
+});
+
+test('destinazioneExtra (R7): pots on schedule are skipped, then investments, then the buffer', () => {
+  const inRegola = cfgR7([regali({quota: 20}), svX('Investimenti', 0)]);
+  assert.strictEqual(L.destinazioneExtra({}, inRegola, {d: '2027-04-03', e: 200}).b, 'Investimenti');
+  assert.strictEqual(L.destinazioneExtra({}, cfgR7([regali({quota: 20})]), {d: '2027-04-03', e: 200}).b, 'Cuscinetto');
 });
