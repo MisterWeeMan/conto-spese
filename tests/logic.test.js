@@ -339,6 +339,14 @@ test('ammanco: how much of an expense the pot cannot cover (the movement itself 
   assert.strictEqual(L.ammanco(mesi, cfg, {d: '2026-12-15', u: 50, p: 35, c: 'Auto fissi'}), 5); // my part counts
 });
 
+test('ammanco: a pot with sottoZero may go below zero, every other pot is still blocked', () => {
+  const tcg = {...sv, nome: 'Fondo TCG', sottoZero: true};
+  const cfg = {salvadanai: [sv, tcg]};
+  assert.strictEqual(L.ammanco({}, cfg, {d: '2026-12-15', u: 500, c: 'Fondo TCG'}), 0);
+  assert.strictEqual(L.ammanco({}, cfg, {d: '2026-12-15', u: 500, c: 'Auto fissi'}), 380);
+  assert.strictEqual(L.saldoSalvadanaio({'2026-12': {a: {d: '2026-12-15', u: 500, c: 'Fondo TCG'}}}, tcg, '2026-12'), -380); // the raw balance is negative
+});
+
 test('meseCalc: a pot is not a budget: its expenses stay out of senza and spendibile', () => {
   const cfg = {categorie: [{nome: 'Bar', budget: 100}], salvadanai: [sv]};
   const mesi = {'2027-01': {a: {d: '2027-01-10', u: 30, c: 'Auto fissi'}, b: {d: '2027-01-11', u: 10, c: 'Bar'}}};
@@ -582,6 +590,15 @@ test('destinazioneExtra: the balance used is the one at the movement month, extr
 test('destinazioneExtra: a card sale (label TCG) always goes to the TCG fund, even below the threshold', () => {
   assert.strictEqual(L.destinazioneExtra({}, cfgX, {d: '2027-02-03', e: 30, l: ['tcg']}).b, 'Fondo TCG');
   assert.strictEqual(L.destinazioneExtra({}, {salvadanai: []}, {d: '2027-02-03', e: 30, l: ['TCG']}).b, 'Cuscinetto'); // no fund configured
+});
+
+test('destinazioneExtra: a card sale says how much the TCG fund needs to get back to zero when it is negative', () => {
+  const mesi = {'2027-02': {a: {d: '2027-02-01', u: 130, c: 'Fondo TCG'}}};
+  const cfg = {salvadanai: [{...svX('Fondo TCG', 0), sottoZero: true}]};
+  const r = L.destinazioneExtra(mesi, cfg, {d: '2027-02-03', e: 30, l: ['tcg']});
+  assert.strictEqual(r.b, 'Fondo TCG');
+  assert.match(r.motivo, /130,00/);
+  assert.doesNotMatch(L.destinazioneExtra({}, cfg, {d: '2027-02-03', e: 30, l: ['tcg']}).motivo, /zero/); // not negative: plain reason
 });
 
 test('destinazioneExtra: threshold and names can be set in cfg.extra', () => {
@@ -997,16 +1014,13 @@ test('patrimonio: a closed account keeps what it holds; an account not yet opene
   assert.strictEqual(r.parziale, true);
 });
 
-test('patrimonio: an open account without an opening balance is flagged; the TCG stock counts from its date; open credits are shown apart', () => {
+test('patrimonio: an open account without an opening balance is flagged; open credits are shown apart', () => {
   const cfg = cfgW(); delete cfg.conti[0].saldoIniziale;
   assert.deepStrictEqual(L.patrimonio({}, cfg, '2026-03-01').senzaSaldo, ['Banca']);
   assert.deepStrictEqual(L.patrimonio({}, cfgW(), '2026-03-01').senzaSaldo, []);
-  const c2 = cfgW(); c2.magazzinoTCG = [{d: '2026-02-10', importo: 80}, {d: '2026-03-01', importo: 120}];
-  assert.strictEqual(L.patrimonio({}, c2, '2026-02-01').totale, 2550);
-  assert.strictEqual(L.patrimonio({}, c2, '2026-02-20').totale, 2630);
-  assert.strictEqual(L.patrimonio({}, c2, '2026-03-05').totale, 2670);
-  const c3 = cfgW(); c3.magazzinoTCG = 60; // a bare number is accepted
-  assert.strictEqual(pv(L.patrimonio({}, c3, '2026-03-01'), 'Magazzino TCG'), 60);
+  const c2 = cfgW(); c2.magazzinoTCG = [{d: '2026-02-10', importo: 80}]; // a leftover of the removed stock field is ignored
+  assert.strictEqual(L.patrimonio({}, c2, '2026-02-20').totale, L.patrimonio({}, cfgW(), '2026-02-20').totale);
+  assert.strictEqual(L.patrimonio({}, c2, '2026-02-20').componenti.some(c => c.tipo === 'tcg'), false);
   const mesi = {'2026-02': {a: {d: '2026-02-05', u: 100, p: 60, k: 'Banca', c: 'Cena'}}};
   const r = L.patrimonio(mesi, cfgW(), '2026-03-01');
   assert.strictEqual(r.crediti, 40); assert.strictEqual(r.totale, 2450);
@@ -1082,10 +1096,9 @@ test('tassoRisparmio: a surplus put in the buffer by the month closing counts, o
   assert.strictEqual(L.tassoRisparmio(mesi, cfgG(), '2026-02').pac, 0);
 });
 
-test('validaConfig: magazzinoTCG as a number or a list of dated values; the savings minimum', () => {
-  const ok = Object.assign(cfgW(), {magazzinoTCG: [{d: '2026-02-10', importo: 80}], risparmioMin: 10});
+test('validaConfig: the savings minimum; a leftover magazzinoTCG is ignored without errors', () => {
+  const ok = Object.assign(cfgW(), {magazzinoTCG: [{d: 'x', importo: 80}], risparmioMin: 10});
   assert.deepStrictEqual(L.validaConfig(ok), []);
-  assert.strictEqual(L.validaConfig(Object.assign(cfgW(), {magazzinoTCG: [{d: 'x', importo: 80}]})).length, 1);
   assert.strictEqual(L.validaConfig(Object.assign(cfgW(), {risparmioMin: -3})).length, 1);
 });
 
@@ -1109,4 +1122,12 @@ test('sostituisci2026 refuses a file that is not only 2026 or has broken rows', 
   assert.ok(f('2026-01', {d: '2026-01-02', u: 'x'}));        // not a number
   assert.ok(L.sostituisci2026({}, {}).errori.length);        // empty file
   assert.strictEqual(f('2026-01', {d: '2026-01-02', e: 5, u: 0}), 0);
+});
+
+test('chiusuraStato: a pot with sottoZero never blocks reopening a month', () => {
+  const mesi = {'2026-01': {a: {d: '2026-01-20', u: 90, c: 'Fondo TCG'}}};
+  const cfg = {chiusure: {'2026-01': {righe: [{c: 'Svago', tipo: 'avanzo', importo: 50, a: 'Fondo TCG', coperto: 0}]}}, salvadanai: [{nome: 'Fondo TCG', conto: 'A', quota: 0, sottoZero: true, saldoIniziale: {data: '2026-01-01', importo: 0}}]};
+  assert.strictEqual(L.chiusuraStato(cfg, '2026-01', mesi).puoRiaprire, true);
+  delete cfg.salvadanai[0].sottoZero;
+  assert.strictEqual(L.chiusuraStato(cfg, '2026-01', mesi).puoRiaprire, false);
 });

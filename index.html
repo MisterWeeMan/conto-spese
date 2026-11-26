@@ -226,6 +226,7 @@ details summary{cursor:pointer;font-weight:500}
         <label>Saldo iniziale (€)<input id="svSaldo" inputmode="decimal" data-eur="zero" placeholder="0"></label>
         <label><span>Saldo iniziale alla data<b class="ob" aria-hidden="true">*</b></span><input id="svData" type="date" required></label>
         <label class="tutta">Obiettivo (€), se c'è<input id="svObiettivo" inputmode="decimal" data-eur="zero" placeholder="Vuoto = nessuno"></label>
+        <label class="chk tutta"><input type="checkbox" id="svSottoZero">Può andare sotto zero (soldi da recuperare, come il Fondo TCG)</label>
         <label class="tutta">Quota mensile (€)<input id="svQuota" inputmode="decimal" data-eur="zero" placeholder="0"></label>
         <div class="tutta" id="svVociBox">
           <div class="testa"><b>Voci</b><button class="btn" id="svVoceAgg" type="button">+ Voce</button></div>
@@ -318,12 +319,6 @@ details summary{cursor:pointer;font-weight:500}
     <section class="box">
       <div class="testa"><h2>Componenti</h2></div>
       <div id="ptComp" class="gruppo"></div>
-      <form id="tcgForm" autocomplete="off">
-        <p class="stato tutta">Magazzino TCG: il valore delle carte lo scrivi tu, con la data.</p>
-        <label><span>Data<b class="ob" aria-hidden="true">*</b></span><input id="tcgData" type="date" required></label>
-        <label><span>Valore del magazzino (€)<b class="ob" aria-hidden="true">*</b></span><input id="tcgValore" data-eur="zero" inputmode="decimal" placeholder="Es. 350"></label>
-        <div class="azioni tutta"><button class="btn pri" type="submit">Aggiorna il magazzino</button></div>
-      </form>
     </section>
     <section class="box">
       <div class="testa"><h2>Andamento</h2><span class="stato" id="ptSerieNota"></span></div>
@@ -987,9 +982,9 @@ const nomeMeseOggi = () => todayISO().slice(0, 7);
 function renderSv(pots) {
   const oggi = nomeMeseOggi();
   $('svConta').textContent = `saldo a fine ${new Date(+oggi.slice(0, 4), +oggi.slice(5) - 1, 1).toLocaleDateString('it-IT', {month: 'long'})}`;
-  $('svLista').innerHTML = pots.length ? [...pots].sort((a, b) => a.nome.localeCompare(b.nome, 'it')).map(v => `<button type="button" class="mov cat${st.svEdit === v.nome ? ' sel' : ''}" data-sv="${esc(v.nome)}">
-    <span class="n">${esc(v.nome)}</span><span class="a">${eur.format(saldoSalvadanaio(st.mesi, v, oggi, st.cfg.chiusure))}</span>
-    <span class="s">${esc(v.gruppo || 'Senza gruppo')} · ${esc(v.conto || 'senza conto')} · quota ${eur.format(quotaSalvadanaio(v, oggi))}/mese${v.voci?.length ? ` · ${v.voci.length} voci` : ''}</span></button>`).join('')
+  $('svLista').innerHTML = pots.length ? [...pots].sort((a, b) => a.nome.localeCompare(b.nome, 'it')).map(v => { const s = saldoSalvadanaio(st.mesi, v, oggi, st.cfg.chiusure), da = v.sottoZero && s < -0.005; return `<button type="button" class="mov cat${st.svEdit === v.nome ? ' sel' : ''}" data-sv="${esc(v.nome)}">
+    <span class="n">${esc(v.nome)}</span><span class="a"${da ? ' style="color:var(--warn)"' : ''}>${da ? `da recuperare ${eur.format(-s)}` : eur.format(s)}</span>
+    <span class="s">${esc(v.gruppo || 'Senza gruppo')} · ${esc(v.conto || 'senza conto')} · quota ${eur.format(quotaSalvadanaio(v, oggi))}/mese${v.voci?.length ? ` · ${v.voci.length} voci` : ''}</span></button>`; }).join('')
     : '<p class="vuoto">Nessun salvadanaio. Aggiungi il primo dal modulo.</p>';
   const conti = [...new Set([...contiAttivi(st.cfg).map(c => c.nome), svEditConto])].filter(Boolean);
   const v = $('svConto').value;
@@ -1044,6 +1039,7 @@ function setSvEdit(nome) {
   $('svData').value = v?.saldoIniziale?.data || todayISO();
   $('svQuota').value = v ? String(v.quota || 0).replace('.', ',') : '';
   $('svObiettivo').value = v?.obiettivo ? String(v.obiettivo).replace('.', ',') : '';
+  $('svSottoZero').checked = !!v?.sottoZero;
   $('svVoci').innerHTML = (v?.voci || []).map(voceRiga).join(''); svVociStato();
   renderSv(svLista()); $('svConto').value = v?.conto || '';
 }
@@ -1058,7 +1054,7 @@ $('svForm').addEventListener('submit', ev => {
   const importo = leggi($('svSaldo')), quota = voci.length ? 0 : leggi($('svQuota')), conto = $('svConto').value, obiettivo = leggi($('svObiettivo'));
   if (importo === null || quota === null || obiettivo === null) { toast('Controlla gli importi: uno non è valido'); return; }
   if (!conto) { toast('Scegli il conto del salvadanaio'); $('svConto').focus(); return; }
-  const nuovo = {nome, gruppo: $('svGruppo').value, conto, saldoIniziale: {data: $('svData').value, importo}, quota, ...(voci.length ? {voci} : {}), ...(obiettivo ? {obiettivo} : {})};
+  const nuovo = {nome, gruppo: $('svGruppo').value, conto, saldoIniziale: {data: $('svData').value, importo}, quota, ...(voci.length ? {voci} : {}), ...(obiettivo ? {obiettivo} : {}), ...($('svSottoZero').checked ? {sottoZero: true} : {})};
   if (scriviCfg({salvadanai: [...svLista().filter(v => v.nome !== nome), nuovo]})) { toast(da ? 'Salvadanaio salvato' : `Salvadanaio aggiunto: ${nome}`); setSvEdit(null); render(); }
 });
 $('svElimina').addEventListener('click', () => {
@@ -1289,7 +1285,7 @@ function renderRiepilogo(ym) {
       <p class="stato">I salvadanai per spese programmate non contano come risparmio.</p>`;
 }
 
-// Net worth page (3.4): today's figure with its components, the TCG stock typed by hand, and the end-of-month series.
+// Net worth page (3.4): today's figure with its components and the end-of-month series.
 function renderPatrimonio() {
   if ($('pagPatrimonio').hidden) return;
   if (!ready()) { $('ptComp').innerHTML = '<p class="vuoto">Carico i dati…</p>'; return; }
@@ -1299,11 +1295,10 @@ function renderPatrimonio() {
   $('ptAvvisi').innerHTML = (p.senzaSaldo.length ? `<p class="stato err">Senza saldo iniziale: ${p.senzaSaldo.map(esc).join(', ')}. Il saldo conta solo i movimenti registrati, quindi il patrimonio è parziale (Configurazione, Saldo iniziale).</p>` : '')
     + (p.senzaQuota ? '<p class="stato err">Manca la quota del Joint in vigore: il Joint conta zero. Impostala in Configurazione.</p>' : '');
   const det = c => c.tipo === 'investimenti' ? (inv?.valore != null ? `valore del ${dataIt(inv.data)}, versato ${eur.format(inv.versato)}` : `nessun valore inserito: conta il versato ${eur.format(inv?.versato || 0)}`)
-    : c.tipo === 'tcg' ? 'valore scritto a mano' : c.quota != null ? `saldo del conto ${eur.format(c.saldo)} · tua quota ${c.quota}%` : c.saldo !== c.importo ? `saldo ${eur.format(c.saldo)}, meno la parte investita (contata a valore)` : '';
+    : c.quota != null ? `saldo del conto ${eur.format(c.saldo)} · tua quota ${c.quota}%` : c.saldo !== c.importo ? `saldo ${eur.format(c.saldo)}, meno la parte investita (contata a valore)` : '';
   $('ptComp').innerHTML = p.componenti.map(c => `<div class="riga"><span class="nome">${esc(c.nome)}</span><span class="res">${eur.format(c.importo)}</span>${det(c) ? `<span class="det">${det(c)}</span>` : ''}</div>`).join('')
     + `<div class="riga totale"><span class="nome">Totale</span><span class="res">${eur.format(p.totale)}</span></div>
     <p class="stato">I salvadanai e il fondo emergenze sono già dentro i conti: non si sommano di nuovo. Un giroconto tra conti non cambia il totale.</p>`;
-  if (!$('tcgData').value) $('tcgData').value = oggi;
   const serie = patrimonioSerie(st.mesi, st.cfg, oggi), ultimi = serie.slice(-24);
   $('ptSerieNota').textContent = serie.some(x => x.parziale) ? '* parziale: manca il saldo iniziale di un conto' : '';
   $('ptSerie').innerHTML = !serie.length ? '<p class="vuoto">Serve almeno un movimento per disegnare l\'andamento.</p>' : grafico(ultimi)
@@ -1320,15 +1315,6 @@ function grafico(s) {
     ${s.length > 1 ? `<polyline class="linea" points="${pts}"/>` : ''}${s.map((q, i) => `<circle class="punto" cx="${x(i).toFixed(1)}" cy="${y(q.totale).toFixed(1)}" r="2.5"/>`).join('')}
     <text x="${L}" y="${H - 4}">${s[0].ym}</text><text x="${W - R}" y="${H - 4}" text-anchor="end">${s[s.length - 1].ym}</text></svg>`;
 }
-$('tcgForm').addEventListener('submit', ev => {
-  ev.preventDefault();
-  const d = $('tcgData').value, v = leggi($('tcgValore'));
-  if (!d) { toast('Scegli la data del valore'); $('tcgData').focus(); return; }
-  if (v === null) { $('tcgValore').focus(); return; }
-  if ($('tcgValore').value.trim() === '') { errCampo($('tcgValore'), 'Scrivi il valore (anche 0)'); $('tcgValore').focus(); return; }
-  const lista = Array.isArray(st.cfg.magazzinoTCG) ? st.cfg.magazzinoTCG : []; // a bare number from an old import is replaced by the dated list
-  if (scriviCfg({magazzinoTCG: [...lista.filter(x => x.d !== d), {d, importo: v}]})) { toast('Magazzino aggiornato'); $('tcgValore').value = ''; }
-});
 
 // Side menu: the page is the URL hash, so the phone back button works
 $('menuApri').addEventListener('click', () => $('menu').showModal());

@@ -18,7 +18,7 @@ Termini dello strumento, in italiano. Gli stessi nomi vanno usati nel codice e n
 
 ## Salvadanai
 
-- **Salvadanaio**: riceve una quota mensile e accumula. Non va mai sotto zero. Vive in un conto, anche nel Joint.
+- **Salvadanaio**: riceve una quota mensile e accumula. Non va mai sotto zero (eccezione: il Fondo TCG, che può scendere sotto zero: soldi da recuperare con le prossime vendite di carte). Vive in un conto, anche nel Joint.
 - **Voce** (di un salvadanaio): importo annuale con data (assicurazione, bollo...). La quota mensile è la somma delle voci; il saldo è uno solo.
 - **Quota mensile**: quanto entra ogni mese. Si calcola da obiettivo e data, e può cambiare a una data programmata.
 - **Saldo iniziale**: saldo di partenza a una data.
@@ -37,7 +37,6 @@ Termini dello strumento, in italiano. Gli stessi nomi vanno usati nel codice e n
 - **Stipendio che finanzia il mese**: l'unica categoria di entrata con il flag "finanzia il mese". Un'entrata in qualsiasi altra categoria di entrata (l'ex **entrata extra**: tredicesima, rimborsi, vendita carte) non tocca il mese: quando arriva, decido dove va.
 - **Credito**: soldi che qualcuno mi deve. Non è una mia spesa; si chiude al rimborso.
 - **Etichetta**: dettaglio dentro una categoria o ambito trasversale (TCG). Mostra quanto pesa; nessun budget proprio.
-- **Magazzino** (TCG): valore delle carte in magazzino, inserito a mano. Entra nel saldo dell'etichetta.
 
 ## Joint
 
